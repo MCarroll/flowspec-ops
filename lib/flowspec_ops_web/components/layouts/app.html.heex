@@ -1,0 +1,35 @@
+<div class="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+  <div class="flex min-h-screen">
+    <aside class="w-64 border-r border-zinc-200 bg-white px-4 py-6 dark:border-zinc-800 dark:bg-zinc-900">
+      <div class="flex items-center justify-between">
+        <a href="/" class="flex items-center gap-3">
+          <img src={~p"/images/logo.svg"} width="28" />
+          <span class="text-sm font-semibold">Flowspec Ops</span>
+        </a>
+        <button
+          id="theme-toggle"
+          type="button"
+          class="rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          aria-pressed="false"
+        >
+          Toggle theme
+        </button>
+      </div>
+      <nav class="mt-8 space-y-1 text-sm font-medium">
+        <.link
+          navigate={~p"/clients"}
+          class="flex items-center gap-2 rounded-md px-3 py-2 text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800"
+        >
+          <span class="hero-user-group-mini"></span>
+          Clients
+        </.link>
+      </nav>
+    </aside>
+    <main class="flex-1 px-6 py-8">
+      <div class="mx-auto w-full max-w-5xl">
+        <.flash_group flash={@flash} />
+        {@inner_content}
+      </div>
+    </main>
+  </div>
+</div>
