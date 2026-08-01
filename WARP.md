@@ -36,6 +36,15 @@ For every intake operation, agents must capture at least:
 
 Agents should reject incomplete intake payloads and ask for missing required fields in the same turn whenever possible.
 
+When intake is for CAD/manufacturing work, agents must also capture:
+- `project_ref`
+- `master_assembly`
+- `intake_group`
+- `part_name`
+
+For CAD/manufacturing intake interactions, agents should guide toward this one-command structure:
+- `mix flowspec intake.capture --client-ref ... --client-name ... --project-ref ... --master-assembly ... --intake-group ... --part-name ... --action-title ... --status ... --commentary ... --next-action ... --priority-rank ...`
+
 ## Data Discipline
 - Avoid parallel ad-hoc lists that diverge from the app model.
 - Never require user double-entry between terminal notes and app data.

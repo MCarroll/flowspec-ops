@@ -15,6 +15,7 @@ Core decision lenses applied across this app:
 - Intake is single-entry from Warp terminal (no dual entry).
 - Agents must write one unified payload to app records and local mirror artifacts.
 - Required intake fields: `client_ref`, `action_title`, `commentary`, `next_action`, `status`, `priority_rank`.
+- CAD/drawing intake context (when applicable): `project_ref`, `master_assembly`, `intake_group`, `part_name`.
 
 To start your Phoenix server:
 
@@ -40,9 +41,14 @@ Use `mix flowspec` to interact with domain services locally:
 - `mix flowspec status`
 - `mix flowspec order.create ORDER_REF`
 - `mix flowspec queue.transition ORDER_REF TO_STATUS`
-- `mix flowspec intake.capture --client-ref REF --client-name NAME --contact-name NAME --contact-email EMAIL --task "TITLE|STATUS|COMMENTARY|NEXT_ACTION|PRIORITY"`
+- `mix flowspec intake.capture --client-ref REF --client-name NAME --project-ref REF --master-assembly NAME --intake-group NAME --part-name NAME --action-title TITLE --status STATUS --commentary TEXT --next-action TEXT --priority-rank N`
+- `mix flowspec intake.capture --client-ref REF --client-name NAME --task "TITLE|STATUS|COMMENTARY|NEXT_ACTION|PRIORITY"`
 
-Example (single command, multiple tasks):
+Example (single command, manufacturing/CAD intake):
+
+`mix flowspec intake.capture --client-ref IMOD --client-name "iMod Systems" --project-ref "PN / Devil Mountain" --master-assembly "HVAC Filter Box Assembly" --intake-group "Intake Group" --part-name "TopHat8x12x6" --action-title "Finish TopHat8x12x6 drawing package" --status active --commentary "Finishing drawings for HVAC Filter Box Assembly intake component; need fabrication-ready release details." --next-action "Complete dimension/tolerance pass and release rev for review." --priority-rank 1`
+
+Legacy example (single command, multiple tasks):
 
 `mix flowspec intake.capture --client-ref HHCO --client-name "Higher Health" --contact-name "Max" --contact-email "max@higherhealth.com" --task "Email CaliJane2 invite|blocked|Invite is blocked pending visuals|Send invite after attachments are ready|1" --task "Create Graffle company/brand wiring diagram|active|Needed for onboarding context email|Export diagram PDF for attachment|2" --task "Create 3D press mold drawing|active|Technical visual for client packet|Export latest drawing revision|3"`
 

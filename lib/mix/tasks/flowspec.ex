@@ -11,7 +11,8 @@ defmodule Mix.Tasks.Flowspec do
     mix flowspec status
     mix flowspec order.create ORDER_REF
     mix flowspec queue.transition ORDER_REF TO_STATUS
-    mix flowspec intake.capture --client-ref REF --contact-name NAME --contact-email EMAIL --task "TITLE|STATUS|COMMENTARY|NEXT_ACTION|PRIORITY"
+    mix flowspec intake.capture --client-ref REF --client-name NAME --project-ref REF --master-assembly NAME --intake-group NAME --part-name NAME --action-title TITLE --status STATUS --commentary TEXT --next-action TEXT --priority-rank N
+    mix flowspec intake.capture --client-ref REF --client-name NAME --task "TITLE|STATUS|COMMENTARY|NEXT_ACTION|PRIORITY"
   """
 
   alias FlowspecOps.Domain.Intake
@@ -20,7 +21,7 @@ defmodule Mix.Tasks.Flowspec do
 
   @impl Mix.Task
   def run(args) do
-    Mix.Task.run("app.config")
+    Mix.Task.run("app.start")
 
     case args do
       ["ping"] ->
@@ -34,6 +35,7 @@ defmodule Mix.Tasks.Flowspec do
 
       ["queue.transition", order_ref, to_status] ->
         Queue.transition(%{"order_ref" => order_ref, "to_status" => to_status}) |> print_result()
+
       ["intake.capture" | intake_args] ->
         intake_args
         |> parse_intake_payload()
@@ -47,7 +49,8 @@ defmodule Mix.Tasks.Flowspec do
           mix flowspec status
           mix flowspec order.create ORDER_REF
           mix flowspec queue.transition ORDER_REF TO_STATUS
-          mix flowspec intake.capture --client-ref REF --client-name NAME --contact-name NAME --contact-email EMAIL --task "TITLE|STATUS|COMMENTARY|NEXT_ACTION|PRIORITY"
+          mix flowspec intake.capture --client-ref REF --client-name NAME --project-ref REF --master-assembly NAME --intake-group NAME --part-name NAME --action-title TITLE --status STATUS --commentary TEXT --next-action TEXT --priority-rank N
+          mix flowspec intake.capture --client-ref REF --client-name NAME --task "TITLE|STATUS|COMMENTARY|NEXT_ACTION|PRIORITY"
         """)
     end
   end
@@ -73,18 +76,36 @@ defmodule Mix.Tasks.Flowspec do
       OptionParser.parse(args,
         strict: [
           client_ref: :string,
+          inbox: :string,
           client_name: :string,
+          project_ref: :string,
+          master_assembly: :string,
+          intake_group: :string,
+          part_name: :string,
           contact_name: :string,
           contact_email: :string,
+          action_title: :string,
+          status: :string,
+          commentary: :string,
+          next_action: :string,
+          priority_rank: :integer,
           task: :keep
         ]
       )
 
-    tasks = Keyword.get_values(opts, :task)
+    tasks =
+      opts
+      |> Keyword.get_values(:task)
+      |> Kernel.++(inline_task_from_opts(opts))
 
     %{
       "client_ref" => opts[:client_ref],
+      "inbox" => opts[:inbox],
       "client_name" => opts[:client_name],
+      "project_ref" => opts[:project_ref],
+      "master_assembly" => opts[:master_assembly],
+      "intake_group" => opts[:intake_group],
+      "part_name" => opts[:part_name],
       "contact_name" => opts[:contact_name],
       "contact_email" => opts[:contact_email],
       "tasks" => Enum.map(tasks, &parse_task/1)
@@ -115,5 +136,20 @@ defmodule Mix.Tasks.Flowspec do
 
   defp pad_task_parts(parts) do
     parts ++ List.duplicate("", max(0, 5 - length(parts)))
+  end
+
+  defp inline_task_from_opts(opts) do
+    title = String.trim(opts[:action_title] || "")
+    status = String.trim(opts[:status] || "")
+    commentary = String.trim(opts[:commentary] || "")
+    next_action = String.trim(opts[:next_action] || "")
+    priority_rank = opts[:priority_rank]
+
+    if title == "" and status == "" and commentary == "" and next_action == "" and is_nil(priority_rank) do
+      []
+    else
+      priority_text = if is_integer(priority_rank), do: Integer.to_string(priority_rank), else: ""
+      [Enum.join([title, status, commentary, next_action, priority_text], "|")]
+    end
   end
 end

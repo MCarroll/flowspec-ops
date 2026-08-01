@@ -22,10 +22,18 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 
+// Hooks
+import SidebarState from "./hooks/sidebar_state"
+
+let Hooks = {
+  SidebarState: SidebarState
+}
+
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 let liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
-  params: {_csrf_token: csrfToken}
+  params: {_csrf_token: csrfToken},
+  hooks: Hooks
 })
 
 // Show progress bar on live navigation and form submits
@@ -41,39 +49,4 @@ liveSocket.connect()
 // >> liveSocket.enableLatencySim(1000)  // enabled for duration of browser session
 // >> liveSocket.disableLatencySim()
 window.liveSocket = liveSocket
-const applyTheme = (theme) => {
-  const root = document.documentElement
-  if (theme === "dark") {
-    root.classList.add("dark")
-  } else {
-    root.classList.remove("dark")
-  }
-  localStorage.setItem("theme", theme)
-}
-
-const currentTheme = () => {
-  const stored = localStorage.getItem("theme")
-  if (stored) return stored
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
-}
-
-const updateThemeToggle = (button, theme) => {
-  if (!button) return
-  const next = theme === "dark" ? "light" : "dark"
-  button.textContent = next === "dark" ? "Dark mode" : "Light mode"
-  button.setAttribute("aria-pressed", theme === "dark")
-}
-
-window.addEventListener("DOMContentLoaded", () => {
-  const button = document.getElementById("theme-toggle")
-  const theme = currentTheme()
-  updateThemeToggle(button, theme)
-  if (!button) return
-
-  button.addEventListener("click", () => {
-    const nextTheme = currentTheme() === "dark" ? "light" : "dark"
-    applyTheme(nextTheme)
-    updateThemeToggle(button, nextTheme)
-  })
-})
 

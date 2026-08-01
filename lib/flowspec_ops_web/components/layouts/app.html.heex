@@ -1,35 +1,120 @@
-<div class="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-  <div class="flex min-h-screen">
-    <aside class="w-64 border-r border-zinc-200 bg-white px-4 py-6 dark:border-zinc-800 dark:bg-zinc-900">
-      <div class="flex items-center justify-between">
+<div id="dashboard-shell" phx-hook="SidebarState" class="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+  <!-- Desktop sidebar -->
+  <div
+    id="desktop-sidebar"
+    class="fixed inset-y-0 left-0 z-50 flex w-[10.5rem] flex-col translate-x-0 transition-transform duration-200 ease-in-out"
+  >
+    <div class="flex grow flex-col gap-y-6 overflow-y-auto bg-white dark:bg-zinc-900 px-4 pb-4 border-r border-zinc-200 dark:border-zinc-800">
+      <div class="flex h-16 shrink-0 items-center">
         <a href="/" class="flex items-center gap-3">
           <img src={~p"/images/logo.svg"} width="28" />
-          <span class="text-sm font-semibold">Flowspec Ops</span>
+          <span class="text-sm font-semibold text-zinc-900 dark:text-white">Flowspec Ops</span>
         </a>
-        <button
-          id="theme-toggle"
-          type="button"
-          class="rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          aria-pressed="false"
-        >
-          Toggle theme
-        </button>
       </div>
-      <nav class="mt-8 space-y-1 text-sm font-medium">
-        <.link
-          navigate={~p"/clients"}
-          class="flex items-center gap-2 rounded-md px-3 py-2 text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800"
-        >
-          <span class="hero-user-group-mini"></span>
-          Clients
-        </.link>
+      <nav class="flex flex-1 flex-col">
+        <ul role="list" class="-mx-2 space-y-1">
+          <li>
+            <.link
+              navigate={~p"/clients"}
+              class="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            >
+              <span class="hero-user-group-mini"></span>
+              Clients
+            </.link>
+          </li>
+          <li>
+            <details class="group" open>
+              <summary class="flex cursor-pointer list-none items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800 [&::-webkit-details-marker]:hidden">
+                <span class="hero-building-office-2-mini"></span>
+                <span class="flex-1">Factory</span>
+                <.icon
+                  name="hero-chevron-right-mini"
+                  class="size-4 shrink-0 text-zinc-400 transition-transform group-open:rotate-90"
+                />
+              </summary>
+              <ul role="list" class="mt-1 space-y-1 border-l border-zinc-200 pl-3 ml-4 dark:border-zinc-700">
+                <li>
+                  <.link
+                    navigate={~p"/factory/projects"}
+                    class="block rounded-md px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    Projects
+                  </.link>
+                </li>
+                <li>
+                  <.link
+                    navigate={~p"/factory/templates"}
+                    class="block rounded-md px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    Templates
+                  </.link>
+                </li>
+                <li>
+                  <.link
+                    navigate={~p"/factory/part-specs"}
+                    class="block rounded-md px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    Part Specs
+                  </.link>
+                </li>
+              </ul>
+            </details>
+          </li>
+        </ul>
       </nav>
-    </aside>
-    <main class="flex-1 px-6 py-8">
-      <div class="mx-auto w-full max-w-5xl">
-        <.flash_group flash={@flash} />
-        {@inner_content}
+    </div>
+  </div>
+
+  <!-- Main content + header -->
+  <div id="dashboard-content" class="pl-[10.5rem] transition-[padding] duration-200 ease-in-out">
+    <!-- Top header bar -->
+    <div class="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 shadow-sm">
+      <!-- Desktop sidebar toggle -->
+      <button
+        type="button"
+        data-sidebar-toggle
+        aria-expanded="true"
+        title="Hide menu"
+        class="inline-flex -m-2.5 items-center justify-center rounded-md p-2.5 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/70 hover:text-zinc-700 dark:hover:text-white transition-all duration-200"
+      >
+        <span class="sr-only" data-sidebar-toggle-label>Hide menu</span>
+        <span
+          data-sidebar-icon="toggle"
+          class="inline-flex size-5 items-center justify-center rounded-md bg-zinc-100/70 dark:bg-zinc-800/70 ring-1 ring-zinc-200/70 dark:ring-white/10 text-zinc-500 dark:text-zinc-300 transition-all duration-200"
+        >
+          <.icon name="hero-chevron-left" class="size-4 shrink-0 text-current transition-transform duration-200 ease-out" />
+        </span>
+      </button>
+
+      <div class="flex flex-1 items-center justify-end gap-x-4">
+        <!-- Theme toggle -->
+        <div class="flex items-center gap-1 rounded-full bg-zinc-100 dark:bg-zinc-800 p-1">
+          <button
+            type="button"
+            onclick="document.documentElement.classList.remove('dark'); localStorage.setItem('theme', 'light');"
+            class="rounded-full p-1.5 text-zinc-400 hover:text-amber-500 dark:hover:text-amber-400 transition-colors"
+            title="Light mode"
+          >
+            <.icon name="hero-sun" class="size-5" />
+            <span class="sr-only">Light mode</span>
+          </button>
+          <button
+            type="button"
+            onclick="document.documentElement.classList.add('dark'); localStorage.setItem('theme', 'dark');"
+            class="rounded-full p-1.5 text-zinc-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+            title="Dark mode"
+          >
+            <.icon name="hero-moon" class="size-5" />
+            <span class="sr-only">Dark mode</span>
+          </button>
+        </div>
       </div>
+    </div>
+
+    <!-- Page content -->
+    <main class="py-6 px-4 lg:px-6">
+      <.flash_group flash={@flash} />
+      {@inner_content}
     </main>
   </div>
 </div>
