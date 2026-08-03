@@ -2,6 +2,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   use FlowspecOpsWeb, :live_view
 
   alias FlowspecOps.Factories
+  alias FlowspecOps.Factories.FactoryNodeStep
 
   @tabs [
     {"Project Net", "net"},
@@ -245,6 +246,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
         people: people,
         estimated_minutes: est,
         specs: blank_to_nil(Map.get(params, "specs")),
+        shared: checkbox_true?(params, "shared"),
         parallel_with_step_id: parallel_id
       }
 
@@ -969,8 +971,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   end
 
   defp expected_weekly_in(node, links) do
-    links
-    |> Enum.filter(&(&1.to_node_id == node.id && &1.from_node && &1.from_node.kind == :transport))
+    inbound_transport_links(node, links)
     |> Enum.map(fn l -> l.from_node.batch_size || 0 end)
     |> Enum.sum()
     |> case do
@@ -979,21 +980,59 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
     end
   end
 
-  defp inbound_ship_marks(node, links) do
-    links
-    |> Enum.filter(&(&1.to_node_id == node.id && &1.from_node && &1.from_node.kind == :transport))
-    |> Enum.map(fn l ->
-      t = l.from_node
-      qty = t.batch_size
-      day = t.ship_weekday && String.slice(String.capitalize(t.ship_weekday), 0, 3)
-      cond do
-        qty && day -> "#{qty} #{day}"
-        qty -> "×#{qty}"
-        true -> nil
-      end
-    end)
-    |> Enum.reject(&is_nil/1)
+  # Compact door pattern from linked transport cards, e.g. "3Th+3Fr=6/wk".
+  defp inbound_avail_label(node, links) do
+    transports =
+      inbound_transport_links(node, links)
+      |> Enum.map(& &1.from_node)
+
+    parts =
+      transports
+      |> Enum.map(fn t ->
+        qty = t.batch_size
+        day = t.ship_weekday && ship_day_short(t.ship_weekday)
+
+        cond do
+          qty && day -> "#{qty}#{day}"
+          qty -> "#{qty}"
+          true -> nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    total =
+      transports
+      |> Enum.map(fn t -> t.batch_size || 0 end)
+      |> Enum.sum()
+
+    cond do
+      parts != [] and total > 0 -> Enum.join(parts, "+") <> "=#{total}/wk"
+      total > 0 -> "#{total}/wk"
+      true -> nil
+    end
   end
+
+  defp inbound_transport_links(node, links) do
+    Enum.filter(links, &(&1.to_node_id == node.id && &1.from_node && &1.from_node.kind == :transport))
+  end
+
+  defp ship_day_short(day) when is_binary(day) do
+    day
+    |> String.trim()
+    |> String.downcase()
+    |> case do
+      "monday" -> "Mo"
+      "tuesday" -> "Tu"
+      "wednesday" -> "We"
+      "thursday" -> "Th"
+      "friday" -> "Fr"
+      "saturday" -> "Sa"
+      "sunday" -> "Su"
+      other -> other |> String.slice(0, 2) |> String.capitalize()
+    end
+  end
+
+  defp ship_day_short(_), do: nil
 
   defp peak_step_people(steps) do
     steps
@@ -1420,17 +1459,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
           end
 
         people = step.people
-        stream =
-          cond do
-            is_integer(content) and is_integer(people) and people > 0 ->
-              ceil(content / people)
-
-            is_integer(content) ->
-              content
-
-            true ->
-              nil
-          end
+        stream = FactoryNodeStep.process_minutes(step)
 
         %{step: step, content: content, stream: stream, people: people, qty: qty, each: each}
       end)
@@ -1447,6 +1476,9 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
 
     # Build parallel groups: linked steps share one time bucket (max stream) and sum people
     {ea_parallel, ea_phased, crew_designed, peak_phase} = step_timing_summary(steps, step_stats)
+
+    # Face chrome: vertical rail joins contiguous steps in the same parallel set (3–4, or 2–3–4).
+    step_stats = annotate_parallel_rails(steps, step_stats)
 
     all_items =
       steps
@@ -1470,22 +1502,56 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
         list -> Enum.sum(list)
       end
 
+    slots = assigns.node.slots
+
+    burn_batch_cents =
+      cond do
+        is_integer(burn_unit_cents) and is_integer(slots) and slots > 0 ->
+          burn_unit_cents * slots
+
+        true ->
+          nil
+      end
 
     links = assigns[:links] || []
     factory = assigns[:factory]
     expected_in = expected_weekly_in(assigns.node, links)
     need_wk = factory && required_weekly_rate(factory)
-    ship_marks = inbound_ship_marks(assigns.node, links)
+    avail_label = inbound_avail_label(assigns.node, links)
     crew = crew_designed
     gate? = Map.get(assigns.node, :gate) == true
-    status_circle = work_cell_status_circle(steps, content_total)
-
     gap =
       if is_number(expected_in) and is_float(need_wk) do
         Float.round(need_wk - expected_in * 1.0, 1)
       else
         nil
       end
+
+    # Series bay default: process batch = slots; batch cycle = slots × Ea (one unit method).
+    batch_cycle_min =
+      cond do
+        is_integer(slots) and slots > 0 and is_integer(ea_parallel) and ea_parallel > 0 ->
+          slots * ea_parallel
+
+        true ->
+          nil
+      end
+
+    # Throughput from one-unit cycle vs standard productive day (see node_design_spec §20).
+    {rate_d, rate_w, rate_m} = station_dwm_rates(ea_parallel)
+
+    rate_gap =
+      if is_float(need_wk) and is_float(rate_w) do
+        Float.round(need_wk - rate_w, 1)
+      else
+        nil
+      end
+
+    rate_gap_short? = is_float(rate_gap) and rate_gap > 0
+    intake_short? = is_float(gap) and gap > 0
+
+    status_circle =
+      work_cell_status_circle(steps, content_total, ea_parallel, rate_gap_short? or intake_short?)
 
     assigns =
       assigns
@@ -1495,18 +1561,26 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       |> assign(:ea_phased, ea_phased)
       |> assign(:expected_in, expected_in)
       |> assign(:need_wk, need_wk)
-      |> assign(:ship_marks, ship_marks)
+      |> assign(:avail_label, avail_label)
       |> assign(:peak_people, crew_designed)
       |> assign(:peak_phase, peak_phase)
       |> assign(:stand_up_cents, stand_up_cents)
       |> assign(:burn_unit_cents, burn_unit_cents)
+      |> assign(:burn_batch_cents, burn_batch_cents)
       |> assign(:crew, crew)
       |> assign(:gate?, gate?)
       |> assign(:status_circle, status_circle)
       |> assign(:intake_gap, gap)
-      |> assign(:intake_short?, is_float(gap) and gap > 0)
+      |> assign(:intake_short?, intake_short?)
       |> assign(:ea_label, format_duration_minutes(ea_parallel))
       |> assign(:ea_phased_label, format_duration_minutes(ea_phased))
+      |> assign(:batch_cycle_min, batch_cycle_min)
+      |> assign(:batch_cycle_label, format_duration_minutes(batch_cycle_min))
+      |> assign(:rate_d, rate_d)
+      |> assign(:rate_w, rate_w)
+      |> assign(:rate_m, rate_m)
+      |> assign(:rate_gap, rate_gap)
+      |> assign(:rate_gap_short?, rate_gap_short?)
 
     ~H"""
     <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
@@ -1524,6 +1598,14 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
           >
             <%= @node.name %>
           </button>
+          <%= if @node.slots do %>
+            <span
+              class="shrink-0 rounded border border-zinc-300 bg-white px-1 py-0.5 text-[9px] font-semibold tabular-nums text-zinc-600 dark:border-zinc-500 dark:bg-zinc-800 dark:text-zinc-200"
+              title="Bay slots (process batch default)"
+            >
+              <%= @node.slots %> slots
+            </span>
+          <% end %>
           <div class="ml-auto flex shrink-0 items-center gap-1">
             <span
               class={[
@@ -1577,31 +1659,28 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
         </div>
 
         <%= if @expected_in do %>
-          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 border-b border-zinc-100 px-2.5 py-1.5 text-[11px] dark:border-zinc-700">
-            <span class="text-zinc-500 dark:text-zinc-400">In</span>
+          <div
+            class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 border-b border-zinc-100 px-2.5 py-1.5 text-[11px] dark:border-zinc-700"
+            title="Avail = linked transport deliveries into this door (planned). Need = factory promise rate. Gap = Need − Avail."
+          >
+            <span class="text-zinc-500 dark:text-zinc-400">Avail</span>
             <span class="tabular-nums text-right font-medium text-zinc-800 dark:text-zinc-100">
-              <%= cond do %>
-                <% @expected_in && @ship_marks != [] -> %>
-                  <%= @expected_in %>/wk · <%= Enum.join(@ship_marks, "+") %>
-                <% @expected_in -> %>
-                  <%= @expected_in %>/wk
-                <% true -> %>
-                  —
-              <% end %>
+              <%= @avail_label || "—" %>
             </span>
             <span class="text-zinc-500 dark:text-zinc-400">Need</span>
             <span class="tabular-nums text-right"><%= if @need_wk, do: "#{format_rate(@need_wk)}/wk", else: "—" %></span>
             <span class="text-zinc-500 dark:text-zinc-400">Gap</span>
             <span class={[
-              "tabular-nums text-right font-semibold",
-              @intake_short? && "text-amber-700 dark:text-amber-300",
-              !@intake_short? && @intake_gap && "text-emerald-700 dark:text-emerald-300"
+              "tabular-nums text-right",
+              @intake_short? && "text-amber-600 dark:text-amber-400",
+              !@intake_short? && @intake_gap && "text-emerald-700 dark:text-emerald-300 font-semibold",
+              is_nil(@intake_gap) && "font-semibold text-zinc-800 dark:text-zinc-100"
             ]}>
               <%= cond do %>
                 <% is_nil(@intake_gap) -> %>
                   —
                 <% @intake_short? -> %>
-                  short <%= format_rate(@intake_gap) %>
+                  <%= format_rate(@intake_gap) %>
                 <% @intake_gap < 0 -> %>
                   +<%= format_rate(abs(@intake_gap)) %>
                 <% true -> %>
@@ -1618,13 +1697,40 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
               type="button"
               phx-click="open_step_edit"
               phx-value-id={step.id}
-              class="group/row grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-start gap-1.5 px-2.5 py-1.5 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/30"
+              class={[
+                "group/row grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-stretch gap-1.5 px-2.5 py-0 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/30",
+                stat.parallel? && "bg-indigo-50/40 dark:bg-indigo-950/20"
+              ]}
+              title={if(stat.parallel?, do: "Parallel with linked step(s) — process time uses max in group", else: nil)}
             >
-              <span class="mt-0.5 inline-flex size-5 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-bold tabular-nums text-zinc-400 dark:border-zinc-500 dark:text-zinc-300">
-                <%= step.position %>
-              </span>
-              <div class="min-w-0">
-                <div class="truncate font-medium text-zinc-700 dark:text-zinc-200"><%= step.name %></div>
+              <div class="flex flex-col items-center self-stretch">
+                <div class={[
+                  "w-0.5 flex-1 min-h-[0.35rem]",
+                  stat.rail_up && "bg-indigo-400 dark:bg-indigo-500",
+                  !stat.rail_up && "bg-transparent"
+                ]}></div>
+                <span class={[
+                  "inline-flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold tabular-nums",
+                  stat.parallel? &&
+                    "border-indigo-500 text-indigo-700 dark:border-indigo-400 dark:text-indigo-200",
+                  !stat.parallel? &&
+                    "border-zinc-300 text-zinc-400 dark:border-zinc-500 dark:text-zinc-300"
+                ]}>
+                  <%= step.position %>
+                </span>
+                <div class={[
+                  "w-0.5 flex-1 min-h-[0.35rem]",
+                  stat.rail_down && "bg-indigo-400 dark:bg-indigo-500",
+                  !stat.rail_down && "bg-transparent"
+                ]}></div>
+              </div>
+              <div class="min-w-0 py-1.5">
+                <div class="flex min-w-0 items-center gap-1">
+                  <div class="truncate font-medium text-zinc-700 dark:text-zinc-200"><%= step.name %></div>
+                  <%= if stat.parallel? do %>
+                    <span class="shrink-0 text-[9px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300" title="Runs in parallel">∥</span>
+                  <% end %>
+                </div>
                 <div class="text-[10px] tabular-nums text-zinc-400">
                   <%= if stat.qty && stat.each do %>
                     ×<%= stat.qty %> · <%= stat.each %>m ea
@@ -1633,9 +1739,6 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
                   <% end %>
                   <%= if stat.people do %>
                     · <%= stat.people %> ppl
-                  <% end %>
-                  <%= if stat.step.parallel_with_step_id do %>
-                    · ∥ <%= parallel_step_label(@node.steps, stat.step.parallel_with_step_id) %>
                   <% end %>
                 </div>
                 <%= for item <- Map.get(step, :items) || [] do %>
@@ -1648,9 +1751,9 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
                   </div>
                 <% end %>
               </div>
-              <div class="pt-0.5 text-right tabular-nums text-zinc-500 dark:text-zinc-300">
+              <div class="py-1.5 text-right tabular-nums text-zinc-500 dark:text-zinc-300">
                 <div><%= if stat.content, do: "#{stat.content}m", else: "—" %></div>
-                <%= if stat.stream && stat.people && stat.people > 1 do %>
+                <%= if stat.stream && stat.people && stat.people > 1 && stat.stream != stat.content do %>
                   <div class="text-[10px] text-zinc-400">→<%= stat.stream %>m</div>
                 <% end %>
               </div>
@@ -1685,42 +1788,71 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
         <% end %>
 
                 <div class="border-t border-zinc-200 bg-zinc-50 px-2.5 py-2 dark:border-zinc-600 dark:bg-zinc-700/80">
-          <div class="mb-1.5 flex items-center justify-between">
-            <span class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-              Abacus
-            </span>
-            <button
-              type="button"
-              phx-click="open_station_edit"
-              phx-value-id={@node.id}
-              class="text-[10px] font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-            >
-              Edit
-            </button>
+          <%!-- Timing formula: CYCLE × BATCH = BATCH CYCLE (series bay default) --%>
+          <div class="mb-2 flex items-end gap-1.5 tabular-nums text-zinc-700 dark:text-zinc-100">
+            <div class="min-w-0 flex-1" title="One unit through this station (parallel steps = max process time)">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Cycle</div>
+              <div class="text-sm font-semibold"><%= @ea_label %></div>
+            </div>
+            <div class="pb-0.5 text-sm font-medium text-zinc-500" aria-hidden="true">×</div>
+            <div class="min-w-0 flex-1" title="Process batch — defaults to bay slots">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Batch</div>
+              <div class="text-sm font-semibold"><%= @node.slots || "—" %></div>
+            </div>
+            <div class="min-w-0 flex-[1.35] text-right" title="Series bay: cycle × batch. Time to work a full process batch unit after unit.">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Batch cycle</div>
+              <div class="text-sm font-semibold"><%= @batch_cycle_label %></div>
+            </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] tabular-nums text-zinc-700 dark:text-zinc-100 sm:grid-cols-3">
-            <div title="Deliverable time: max within parallel steps, sum across serial phases">
-              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Ea</div>
-              <div class="font-semibold"><%= @ea_label %></div>
-              <%= if @ea_phased > 0 and @ea_label != @ea_phased_label do %>
-                <div class="text-[10px] text-zinc-400">if all serial <%= @ea_phased_label %></div>
-              <% end %>
+          <div class="mb-2 flex items-end gap-2 border-t border-zinc-200/80 pt-2 tabular-nums text-zinc-700 dark:border-zinc-600 dark:text-zinc-100">
+            <div class="min-w-0 flex-1" title="Units/day at cycle with standard productive day (360m)">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">D</div>
+              <div class="text-sm font-semibold"><%= format_dwm(@rate_d) %></div>
             </div>
+            <div class="min-w-0 flex-1" title="Units/week = D × 5">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">W</div>
+              <div class="text-sm font-semibold"><%= format_dwm(@rate_w) %></div>
+            </div>
+            <div class="min-w-0 flex-1" title="Units/month = D × 20">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">M</div>
+              <div class="text-sm font-semibold"><%= format_dwm(@rate_m) %></div>
+            </div>
+            <div class="shrink-0 pb-1 text-[10px] font-medium text-zinc-400" aria-hidden="true">::</div>
+            <div class="min-w-0 flex-1" title="Factory promise need (units/week)">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">N/wk</div>
+              <div class="text-sm font-semibold">
+                <%= if @need_wk, do: format_rate(@need_wk), else: "—" %>
+              </div>
+            </div>
+            <div class="min-w-0 flex-1 text-right" title="Gap = Need/wk − station W (short if positive)">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">G</div>
+              <div class={[
+                "text-sm",
+                @rate_gap_short? && "font-normal text-amber-600 dark:text-amber-400",
+                !@rate_gap_short? && @rate_gap && "font-semibold text-emerald-700 dark:text-emerald-300",
+                is_nil(@rate_gap) && "font-semibold text-zinc-800 dark:text-zinc-100"
+              ]}>
+                <%= cond do %>
+                  <% is_nil(@rate_gap) -> %>
+                    —
+                  <% @rate_gap_short? -> %>
+                    <%= format_rate(@rate_gap) %>
+                  <% @rate_gap < 0 -> %>
+                    +<%= format_rate(abs(@rate_gap)) %>
+                  <% true -> %>
+                    ok
+                <% end %>
+              </div>
+            </div>
+          </div>
 
+          <div class="grid grid-cols-4 gap-x-2 gap-y-2 border-t border-zinc-200/80 pt-2 text-[11px] tabular-nums text-zinc-700 dark:border-zinc-600 dark:text-zinc-100">
             <div title="Designed people = sum of phase crews (∥ steps add inside a phase)">
               <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Crew</div>
               <div class="font-semibold">
                 <%= @peak_people || "—" %><%= if @peak_people, do: " ppl", else: "" %>
               </div>
-              <%= if @peak_phase && @peak_people && @peak_phase < @peak_people do %>
-                <div class="text-[10px] text-zinc-400">busiest phase <%= @peak_phase %></div>
-              <% end %>
-            </div>
-
-            <div title="Bay slots / concurrent deliverables">
-              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Slots</div>
-              <div class="font-semibold"><%= @node.slots || "—" %></div>
             </div>
 
             <div title="Assets to spin up this station (one-time)">
@@ -1730,14 +1862,21 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
               </div>
             </div>
 
-            <div title="Consumables per station deliverable">
-              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Burn / unit</div>
+            <div title="Consumables per unit">
+              <div class="truncate text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Burn/u</div>
               <div class="font-semibold">
-                <%= if @burn_unit_cents, do: "#{format_money_cents(@burn_unit_cents)}/u", else: "—" %>
+                <%= if @burn_unit_cents, do: format_money_cents(@burn_unit_cents), else: "—" %>
               </div>
             </div>
 
-            <div class="flex items-end justify-end">
+            <div title="Consumables per process batch (burn/u × batch)">
+              <div class="truncate text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Burn/b</div>
+              <div class="font-semibold">
+                <%= if @burn_batch_cents, do: format_money_cents(@burn_batch_cents), else: "—" %>
+              </div>
+            </div>
+
+            <div class="col-span-4 flex items-end justify-end">
               <button
                 type="button"
                 phx-click="delete_node"
@@ -1859,20 +1998,92 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
     if ra == rb, do: parent, else: Map.put(parent, ra, rb)
   end
 
-  # Phase 1: white unless we clearly lack a basis to show the chrome is alive.
-  # Orange/green bottleneck math arrives in Phase 3 — do not fake green.
-  defp work_cell_status_circle(steps, est_total) do
+  # Annotate step_stats with parallel face chrome: contiguous members of the same
+  # parallel set get a vertical rail between badges (InDesign-style link, CSS).
+  defp annotate_parallel_rails(steps, step_stats) do
+    parent = parallel_parent_map(steps)
+
+    root_of = fn step -> find_root(parent, step.id) end
+
+    group_sizes =
+      steps
+      |> Enum.group_by(root_of)
+      |> Map.new(fn {root, members} -> {root, length(members)} end)
+
+    stats = Enum.with_index(step_stats)
+
+    Enum.map(stats, fn {stat, idx} ->
+      step = stat.step
+      root = root_of.(step)
+      parallel? = Map.get(group_sizes, root, 1) > 1
+
+      prev = if idx > 0, do: Enum.at(step_stats, idx - 1)
+      next = Enum.at(step_stats, idx + 1)
+
+      rail_up =
+        parallel? and prev != nil and root_of.(prev.step) == root
+
+      rail_down =
+        parallel? and next != nil and root_of.(next.step) == root
+
+      stat
+      |> Map.put(:parallel?, parallel?)
+      |> Map.put(:rail_up, rail_up)
+      |> Map.put(:rail_down, rail_down)
+    end)
+  end
+
+  defp parallel_parent_map(steps) do
+    parent = Map.new(steps, fn s -> {s.id, s.id} end)
+
+    Enum.reduce(steps, parent, fn s, acc ->
+      case s.parallel_with_step_id do
+        nil -> acc
+        other_id -> union_ids(acc, s.id, other_id)
+      end
+    end)
+  end
+
+  # White = not enough data. Orange = short vs promise (rate G or intake gap).
+  # Green reserved until fuller andon rules (do not fake green).
+  defp work_cell_status_circle(steps, _content_total, ea_parallel, short?) do
     cond do
       steps == [] -> :white
-      est_total <= 0 -> :white
+      not (is_integer(ea_parallel) and ea_parallel > 0) -> :white
+      short? -> :orange
       true -> :white
     end
   end
 
   defp status_circle_title(:white), do: "Need data"
-  defp status_circle_title(:orange), do: "Bottleneck"
+  defp status_circle_title(:orange), do: "Short"
   defp status_circle_title(:green), do: "No blocks"
   defp status_circle_title(_), do: "Need data"
+
+  # Standard paid shift 8h; OH deductions in §20 of node_design_spec.
+  # Productive minutes = 480 − (15+15 breaks + 30 3S + 45 lunch + 15 standup) = 360.
+  @standard_shift_min 480
+  @oh_breaks_min 30
+  @oh_cleanup_3s_min 30
+  @oh_lunch_min 45
+  @oh_standup_min 15
+  @standard_productive_min @standard_shift_min - @oh_breaks_min - @oh_cleanup_3s_min - @oh_lunch_min -
+                             @oh_standup_min
+  @workdays_per_week 5
+  @workdays_per_month 20
+
+  defp station_dwm_rates(cycle_min) when is_integer(cycle_min) and cycle_min > 0 do
+    d = Float.round(@standard_productive_min / cycle_min, 1)
+    w = Float.round(d * @workdays_per_week, 1)
+    m = Float.round(d * @workdays_per_month, 1)
+    {d, w, m}
+  end
+
+  defp station_dwm_rates(_), do: {nil, nil, nil}
+
+  defp format_dwm(nil), do: "—"
+  defp format_dwm(n) when is_float(n), do: :erlang.float_to_binary(n, decimals: 1)
+  defp format_dwm(n) when is_integer(n), do: Integer.to_string(n)
 
   defp format_duration_minutes(m) when is_integer(m) and m > 0 do
     hours = div(m, 60)
@@ -1886,16 +2097,6 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   end
 
   defp format_duration_minutes(_), do: "—"
-
-  defp parallel_step_label(steps, id) do
-    case Enum.find(steps, &(&1.id == id)) do
-      nil -> "step"
-      s -> s.name
-    end
-  end
-
-
-
 
   defp parse_money_to_cents(nil), do: nil
   defp parse_money_to_cents(""), do: nil
@@ -1996,7 +2197,6 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
 
           qty = step.qty_per_unit
           each = step.minutes_each
-          people = step.people
 
           content =
             cond do
@@ -2005,17 +2205,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
               true -> nil
             end
 
-          wall =
-            cond do
-              is_integer(content) and is_integer(people) and people > 0 ->
-                ceil(content / people)
-
-              is_integer(content) ->
-                content
-
-              true ->
-                nil
-            end
+          process = FactoryNodeStep.process_minutes(step)
 
           assign(assigns,
             node: node,
@@ -2026,7 +2216,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
             stand_up_total_cents: sum_cents(equip, :stand_up),
             burn_total_cents: sum_cents(mats, :burn),
             work_content_min: content,
-            work_wall_min: wall
+            work_process_min: process
           )
 
         nil ->
@@ -2039,7 +2229,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
             stand_up_total_cents: nil,
             burn_total_cents: nil,
             work_content_min: nil,
-            work_wall_min: nil
+            work_process_min: nil
           )
       end
 
@@ -2120,15 +2310,31 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
                 />
               </label>
 
-              <div class="flex items-end gap-1.5 pb-2 pl-0.5">
-                <span class="text-sm font-medium text-zinc-500">=</span>
-                <div
-                  data-wall-out
-                  class="min-w-[2.5rem] text-sm font-semibold tabular-nums text-zinc-800 dark:text-zinc-100"
-                >
-                  <%= if @work_wall_min, do: "#{@work_wall_min}m", else: "—" %>
+              <div class="pb-2">
+                <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Process time</div>
+                <div class="mt-1 flex items-center gap-1.5">
+                  <span class="text-sm font-medium text-zinc-500">=</span>
+                  <div
+                    data-process-out
+                    class="min-w-[2.5rem] text-sm font-semibold tabular-nums text-zinc-800 dark:text-zinc-100"
+                  >
+                    <%= if @work_process_min, do: "#{@work_process_min}m", else: "—" %>
+                  </div>
                 </div>
               </div>
+
+              <label class="inline-flex items-center gap-1.5 pb-2 text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  name="shared"
+                  value="true"
+                  checked={@step.shared != false}
+                  data-cycle-shared
+                  form={"save-step-#{@step.id}"}
+                  class="rounded border-zinc-400"
+                />
+                Shared
+              </label>
             </div>
 
             <div class="mt-3 flex flex-wrap items-center gap-2">

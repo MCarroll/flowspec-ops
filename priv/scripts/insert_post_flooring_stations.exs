@@ -45,7 +45,8 @@ IO.puts("  Created: Logistics Move  id=#{logistics.id} pos=5")
     factory_node_id: logistics.id,
     name: "Rotate, lift & transfer",
     position: 1,
-    people: 3
+    people: 3,
+    shared: false  # crane/gang step: one gang, one move — crew is demand only, not time compression
   })
   |> Repo.insert()
 

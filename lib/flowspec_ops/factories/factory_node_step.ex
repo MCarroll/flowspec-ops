@@ -10,6 +10,7 @@ defmodule FlowspecOps.Factories.FactoryNodeStep do
     field :qty_per_unit, :integer
     field :people, :integer
     field :specs, :string
+    field :shared, :boolean, default: true
 
     belongs_to :factory_node, FlowspecOps.Factories.FactoryNode
 
@@ -34,6 +35,7 @@ defmodule FlowspecOps.Factories.FactoryNodeStep do
       :qty_per_unit,
       :people,
       :specs,
+      :shared,
       :parallel_with_step_id
     ])
     |> validate_required([:factory_node_id, :name, :position])
@@ -42,5 +44,31 @@ defmodule FlowspecOps.Factories.FactoryNodeStep do
     |> validate_number(:minutes_each, greater_than: 0)
     |> unique_constraint([:factory_node_id, :position])
     |> foreign_key_constraint(:parallel_with_step_id)
+  end
+
+  # --- Timing helpers ---
+
+  # Work content: qty × min/ea, or estimated_minutes when no qty/each.
+  def content_minutes(%__MODULE__{qty_per_unit: qty, minutes_each: each})
+      when is_integer(qty) and is_integer(each),
+      do: qty * each
+
+  def content_minutes(%__MODULE__{estimated_minutes: est}) when is_integer(est), do: est
+  def content_minutes(_), do: nil
+
+  # Process time: ceil(content / people) when shared (default), else content.
+  # shared = nil treated as true (safe pre-migration default).
+  def process_minutes(%__MODULE__{} = step) do
+    case content_minutes(step) do
+      nil ->
+        nil
+
+      content ->
+        if step.shared != false and is_integer(step.people) and step.people > 0 do
+          ceil(content / step.people)
+        else
+          content
+        end
+    end
   end
 end

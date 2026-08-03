@@ -1,6 +1,7 @@
 // Instant cycle math in the step popup (no round-trip for display).
-// Cycle = qty × min/ea (one-person content time).
-// After people: wall = ceil(cycle / people). Still not a second "cycle" label.
+// Cycle = qty × min/ea (work content time).
+// Process time = ceil(cycle / people) when Shared checked; = cycle when Shared unchecked
+// (e.g. crane/gang move: one gang does one move, crew size is demand only).
 const StepCycleCalc = {
   mounted() {
     this.el.addEventListener("input", () => this.recalc())
@@ -16,23 +17,28 @@ const StepCycleCalc = {
     const qty = this.num(this.el.querySelector("[data-cycle-qty]"))
     const each = this.num(this.el.querySelector("[data-cycle-each]"))
     const people = this.num(this.el.querySelector("[data-cycle-people]"))
+    const sharedEl = this.el.querySelector("[data-cycle-shared]")
 
     const cycleEl = this.el.querySelector("[data-cycle-out]")
-    const wallEl = this.el.querySelector("[data-wall-out]")
+    const processEl = this.el.querySelector("[data-process-out]")
 
     let cycle = null
     if (qty != null && each != null) cycle = qty * each
 
     if (cycleEl) cycleEl.textContent = cycle != null ? `${cycle}m` : "—"
 
-    let wall = null
-    if (cycle != null && people != null && people > 0) {
-      wall = Math.ceil(cycle / people)
-    } else if (cycle != null) {
-      wall = cycle
+    // Process time: shared (default true) → ceil(cycle/people); not shared → cycle.
+    const isShared = sharedEl ? sharedEl.checked : true
+    let process = null
+    if (cycle != null) {
+      if (isShared && people != null && people > 0) {
+        process = Math.ceil(cycle / people)
+      } else {
+        process = cycle
+      }
     }
 
-    if (wallEl) wallEl.textContent = wall != null ? `${wall}m` : "—"
+    if (processEl) processEl.textContent = process != null ? `${process}m` : "—"
   },
 
   num(input) {

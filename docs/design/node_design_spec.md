@@ -210,6 +210,7 @@ Each row:
 - Step name + order + duration on card.  
 - Side-out: full standard, attachments, notes.  
 - Method green: standard exists and is accepted as usable for run (criteria product-defined; start simple: name + time present → orange; documented standard linked → green).
+- **Process time math honesty:** `cycle = qty × min/ea` (work content). `process_time = ceil(cycle / people)` only when `shared = true` (e.g. piecework crew sharing the work). Crane/gang transfer steps use `shared = false` — one gang executes one move; crew size is demand only, not time compression; `process_time = cycle`.
 
 ---
 
@@ -633,4 +634,43 @@ After conflicts on §19 cleared → implement **only** §19.6 → Michael clicks
 
 ---
 
-*End of draft v1 + session notes + Phase 0 closed + Phase 1 claims.*
+## 20. Standard workday + D/W/M (codify in a later phase)
+
+**Status:** Defaults locked for abacus face (2026-08-03). Full factory-level config / OH editor = later phase step — do not hard-wire multiple calendars yet.
+
+### 20.1 Standard paid shift
+| Block | Minutes |
+|---|---|
+| Paid shift length | **480** (8h) |
+| Breaks | **2 × 15 = 30** |
+| 3S cleanup | **30** |
+| Lunch | **45** |
+| Stand-up meeting | **15** |
+| **Σ overhead** | **120** |
+| **Productive minutes / day** | **360** |
+
+### 20.2 D/W/M (station abacus)
+Uses **Cycle** = one-unit station process time (parallel steps → max within group, sum across serial phases).
+
+| Rate | Formula | Calendar |
+|---|---|---|
+| **D** | `productive_min / cycle_min` | per day |
+| **W** | `D × 5` | workdays/week |
+| **M** | `D × 20` | workdays/month |
+
+Not batch cycle (slots × cycle). Batch cycle is bay/wave time; D/W/M is unit throughput at method cycle.
+
+### 20.3 Abacus face order (work_cell)
+1. `CYCLE × BATCH = BATCH CYCLE`
+2. `D · W · M :: N/wk · G` — G = Need/wk − station W (short if +)
+3. Crew · Stand-up · Burn
+
+### 20.4 Later phase work (checklist item)
+- [ ] Promote shift/OH constants to factory (or site) settings
+- [ ] Optional multi-shift / OT calendars
+- [ ] Andon orange/green vs Need using D/W/M
+- [ ] PDF staff × rate roll-up using same productive day
+
+---
+
+*End of draft v1 + session notes + Phase 0 closed + Phase 1 claims + §20 workday/DWM.*
