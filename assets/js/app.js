@@ -24,9 +24,13 @@ import topbar from "../vendor/topbar"
 
 // Hooks
 import SidebarState from "./hooks/sidebar_state"
+import StepCycleCalc from "./hooks/step_cycle_calc"
+import TabSubmitLast from "./hooks/tab_submit_last"
 
 let Hooks = {
-  SidebarState: SidebarState
+  SidebarState: SidebarState,
+  StepCycleCalc: StepCycleCalc,
+  TabSubmitLast: TabSubmitLast
 }
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")

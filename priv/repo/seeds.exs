@@ -325,19 +325,23 @@ va_factory =
     window_days: 90
   })
 
-# ── Frame Line ──────────────────────────────────────────────────────
-frame_line = insert_line.(%{factory_id: va_factory.id, name: "Frame Line", position: 1})
+# ── Lines: parallel supply + plant path ─────────────────────────────
+# Capacity rule: SUM designed rates across Frame MFG A/B; MIN along Frame Line.
+# Receiving is ONE shared join node on Frame Line (never duplicated).
+mfg_line_a = insert_line.(%{factory_id: va_factory.id, name: "Frame MFG A", position: 1})
+mfg_line_b = insert_line.(%{factory_id: va_factory.id, name: "Frame MFG B", position: 2})
+frame_line = insert_line.(%{factory_id: va_factory.id, name: "Frame Line", position: 3})
 
-# SKUs: two unit variants flowing through this line
+# SKUs: two unit variants
 sku_a = insert_sku.(%{factory_id: va_factory.id, code: "SKU-A", name: "Modular Unit — Standard"})
 sku_b = insert_sku.(%{factory_id: va_factory.id, code: "SKU-B", name: "Modular Unit — ADA"})
 both_skus = "#{sku_a.code},#{sku_b.code}"
 
-# Nodes in production order
-frame_mfg =
+# ── Frame MFG A (supply rope 1) ─────────────────────────────────────
+frame_mfg_a =
   insert_node.(%{
     factory_id: va_factory.id,
-    line_id: frame_line.id,
+    line_id: mfg_line_a.id,
     kind: :supplier,
     name: "Frame Mfg",
     position: 1,
@@ -351,12 +355,45 @@ frame_mfg =
     supply_cadence: "1 frame / week"
   })
 
-transport_lv =
+transport_a =
   insert_node.(%{
     factory_id: va_factory.id,
-    line_id: frame_line.id,
+    line_id: mfg_line_a.id,
     kind: :transport,
     name: "Transport",
+    position: 2,
+    vendor_name: "Mikey's Transport",
+    from_location: "Las Vegas, NV",
+    to_location: "Vallejo, CA",
+    transit_days: 2,
+    transport_duration_minutes: 2 * 24 * 60,
+    batch_size: 3,
+    ship_weekday: "thursday"
+  })
+
+# ── Frame MFG B (parallel supply — dosage lever) ────────────────────
+frame_mfg_b =
+  insert_node.(%{
+    factory_id: va_factory.id,
+    line_id: mfg_line_b.id,
+    kind: :supplier,
+    name: "Frame Mfg 2",
+    position: 1,
+    inspection_point: false,
+    location_note: "Second supply path · TBD",
+    setup_days: 30,
+    first_batch_days: 7,
+    lead_time_days: 7,
+    supply_cadence: "1 frame / week",
+    note: "Parallel rope — add capacity without redrawing the plant path."
+  })
+
+transport_b =
+  insert_node.(%{
+    factory_id: va_factory.id,
+    line_id: mfg_line_b.id,
+    kind: :transport,
+    name: "Transport 2",
     position: 2,
     vendor_name: "Mikey's Transport",
     from_location: "Las Vegas, NV",
@@ -367,29 +404,73 @@ transport_lv =
     ship_weekday: "friday"
   })
 
+# ── Frame Line (plant path — shared Receiving join) ─────────────────
 receiving =
   insert_node.(%{
     factory_id: va_factory.id,
     line_id: frame_line.id,
     kind: :work_cell,
     name: "Receiving",
-    position: 3,
+    position: 1,
     inspection_point: true,
-    slots: 1
+    slots: 3,
+    crew_size: 4
   })
 
-insert_step.(%{factory_node_id: receiving.id, name: "Receive and inspect frame", position: 1})
+insert_step.(%{
+  factory_node_id: receiving.id,
+  name: "Inspect",
+  position: 1,
+  people: 1
+})
+
+insert_step.(%{
+  factory_node_id: receiving.id,
+  name: "Unload / transfer",
+  position: 2,
+  people: 4
+})
 
 eps_lot_one =
   insert_node.(%{
     factory_id: va_factory.id,
     line_id: frame_line.id,
     kind: :queue,
-    name: "EPS Lot One",
-    position: 4,
+    name: "Lot One",
+    position: 2,
     queue_role: :storage_lot,
+    storage_group: "EPS",
     slots: 10,
-    note: "10-slot storage lot. Frames hold here when Flooring bay is occupied."
+    location_note: "Near"
+  })
+
+# Transfer method for the EPS hold family (shown on the group card)
+insert_step.(%{
+  factory_node_id: eps_lot_one.id,
+  name: "Pull & Setup",
+  position: 1,
+  people: 2,
+  specs: "+equip Hyster Heavy\n+equip Transfer Wheels"
+})
+
+insert_step.(%{
+  factory_node_id: eps_lot_one.id,
+  name: "Tow transfer",
+  position: 2,
+  people: 2
+})
+
+eps_lot_two =
+  insert_node.(%{
+    factory_id: va_factory.id,
+    line_id: frame_line.id,
+    kind: :queue,
+    name: "Lot Two",
+    position: 3,
+    queue_role: :storage_lot,
+    storage_group: "EPS",
+    slots: 20,
+    location_note: "Remote"
   })
 
 flooring =
@@ -398,7 +479,7 @@ flooring =
     line_id: frame_line.id,
     kind: :work_cell,
     name: "Flooring",
-    position: 5,
+    position: 4,
     slots: 3
   })
 
@@ -411,7 +492,7 @@ ceiling =
     line_id: frame_line.id,
     kind: :work_cell,
     name: "Ceiling",
-    position: 6,
+    position: 5,
     note: "Stub — not yet configured."
   })
 
@@ -421,7 +502,7 @@ walls =
     line_id: frame_line.id,
     kind: :work_cell,
     name: "Walls",
-    position: 7,
+    position: 6,
     note: "Stub — not yet configured."
   })
 
@@ -431,15 +512,20 @@ s3_node =
     line_id: frame_line.id,
     kind: :work_cell,
     name: "S3",
-    position: 8,
-    note: "Stub — S3H integration pending."
+    position: 7,
+    note: "Stub — external plumbing path pending."
   })
 
-# Links (flow edges, SKU-routed)
-insert_link.(%{factory_id: va_factory.id, from_node_id: frame_mfg.id, to_node_id: transport_lv.id, sku_filter: both_skus})
-insert_link.(%{factory_id: va_factory.id, from_node_id: transport_lv.id, to_node_id: receiving.id, sku_filter: both_skus})
-insert_link.(%{factory_id: va_factory.id, from_node_id: receiving.id, to_node_id: eps_lot_one.id, sku_filter: both_skus, label: "to storage"})
+# Links — supply → Receiving; split to Flooring vs EPS; lots feed Flooring
+insert_link.(%{factory_id: va_factory.id, from_node_id: frame_mfg_a.id, to_node_id: transport_a.id, sku_filter: both_skus})
+insert_link.(%{factory_id: va_factory.id, from_node_id: transport_a.id, to_node_id: receiving.id, sku_filter: both_skus, label: "×3 Thu"})
+insert_link.(%{factory_id: va_factory.id, from_node_id: frame_mfg_b.id, to_node_id: transport_b.id, sku_filter: both_skus})
+insert_link.(%{factory_id: va_factory.id, from_node_id: transport_b.id, to_node_id: receiving.id, sku_filter: both_skus, label: "×3 Fri"})
+insert_link.(%{factory_id: va_factory.id, from_node_id: receiving.id, to_node_id: flooring.id, sku_filter: both_skus, label: "slot open"})
+insert_link.(%{factory_id: va_factory.id, from_node_id: receiving.id, to_node_id: eps_lot_one.id, sku_filter: both_skus, label: "overflow"})
+insert_link.(%{factory_id: va_factory.id, from_node_id: receiving.id, to_node_id: eps_lot_two.id, sku_filter: both_skus, label: "overflow"})
 insert_link.(%{factory_id: va_factory.id, from_node_id: eps_lot_one.id, to_node_id: flooring.id, sku_filter: both_skus})
+insert_link.(%{factory_id: va_factory.id, from_node_id: eps_lot_two.id, to_node_id: flooring.id, sku_filter: both_skus})
 insert_link.(%{factory_id: va_factory.id, from_node_id: flooring.id, to_node_id: ceiling.id, sku_filter: both_skus})
-insert_link.(%{factory_id: va_factory.id, from_node_id: flooring.id, to_node_id: s3_node.id, label: "rework return"})
+insert_link.(%{factory_id: va_factory.id, from_node_id: flooring.id, to_node_id: s3_node.id, label: "SKU-B side path"})
 insert_link.(%{factory_id: va_factory.id, from_node_id: ceiling.id, to_node_id: walls.id, sku_filter: both_skus})

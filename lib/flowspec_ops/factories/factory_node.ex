@@ -11,8 +11,13 @@ defmodule FlowspecOps.Factories.FactoryNode do
     # Queue-specific
     field :queue_role, Ecto.Enum, values: [:queue, :storage_lot, :feeding_buffer]
     field :slots, :integer
+    field :storage_group, :string
+    field :crew_size, :integer
     # Shared
     field :inspection_point, :boolean, default: false
+    field :gate, :boolean, default: false
+    field :product_ready, :boolean, default: false
+    field :method_instruction, :boolean, default: false
     field :location_note, :string
     # Supplier timing / setup
     field :lead_time_days, :integer
@@ -43,13 +48,13 @@ defmodule FlowspecOps.Factories.FactoryNode do
     node
     |> cast(attrs, [
       :factory_id, :kind, :name, :position, :bypass_allowed, :note,
-      :queue_role, :slots, :inspection_point, :line_id, :location_note,
+      :queue_role, :slots, :storage_group, :crew_size, :inspection_point, :gate, :product_ready, :method_instruction, :line_id, :location_note,
       :lead_time_days, :supply_cadence,
       :setup_days, :first_batch_days, :first_batch_qty, :production_batch_slots,
       :transport_duration_minutes, :from_location, :to_location,
       :vendor_name, :batch_size, :ship_weekday, :transit_days
     ])
     |> validate_required([:factory_id, :kind, :name, :position])
-    |> unique_constraint([:factory_id, :position])
+    |> unique_constraint([:factory_id, :line_id, :position], name: :factory_nodes_factory_id_line_id_position_index)
   end
 end

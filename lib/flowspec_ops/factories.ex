@@ -8,6 +8,7 @@ defmodule FlowspecOps.Factories do
   alias FlowspecOps.Factories.FactorySku
   alias FlowspecOps.Factories.FactoryNode
   alias FlowspecOps.Factories.FactoryNodeStep
+  alias FlowspecOps.Factories.FactoryNodeStepItem
 
   def list_factories do
     Repo.all(from f in Factory, order_by: f.name, preload: [:client])
@@ -19,8 +20,8 @@ defmodule FlowspecOps.Factories do
       :client,
       :skus,
       links: [:from_node, :to_node],
-      lines: [nodes: :steps],
-      nodes: :steps
+      lines: [nodes: [steps: :items]],
+      nodes: [steps: :items]
     ])
   end
 
@@ -61,7 +62,7 @@ defmodule FlowspecOps.Factories do
       from n in FactoryNode,
         where: n.factory_id == ^factory_id,
         order_by: n.position,
-        preload: :steps
+        preload: [steps: :items]
     )
   end
 
@@ -138,4 +139,20 @@ defmodule FlowspecOps.Factories do
   end
 
   def delete_step(step), do: Repo.delete(step)
+
+  # --- Step items (equipment / materials) ---
+
+  def create_step_item(attrs) do
+    %FactoryNodeStepItem{}
+    |> FactoryNodeStepItem.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def update_step_item(item, attrs) do
+    item
+    |> FactoryNodeStepItem.changeset(attrs)
+    |> Repo.update()
+  end
+
+  def delete_step_item(item), do: Repo.delete(item)
 end

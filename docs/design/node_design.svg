@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 694 443" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:1.5;">
+    <g transform="matrix(1,0,0,1,-693.5,-1511.481654)">
+        <g transform="matrix(0.307796,0,0,0.040773,-800.040323,1574.67103)">
+            <rect x="4854" y="1021" width="744" height="918" style="fill:rgb(235,235,235);stroke:black;stroke-width:4.55px;"/>
+        </g>
+        <g transform="matrix(0.307796,0,0,0.276913,-800.040323,1371.000893)">
+            <rect x="4854" y="1021" width="744" height="918" style="fill:rgb(235,235,235);stroke:black;stroke-width:3.42px;"/>
+        </g>
+        <g transform="matrix(0.359595,0,0,0.359595,481.489215,1443.889699)">
+            <circle cx="657.5" cy="531.5" r="41.5" style="stroke:rgb(235,235,235);stroke-width:2.78px;"/>
+            <g transform="matrix(1.597484,0,0,1.597484,-768.841853,-271.216412)">
+                <g transform="matrix(50,0,0,50,907.211632,519.987833)">
+                </g>
+                <text x="877.462px" y="519.988px" style="font-family:'AvenirNext-Medium', 'Avenir Next', sans-serif;font-weight:500;font-size:50px;fill:rgb(235,235,235);">2</text>
+            </g>
+        </g>
+        <g transform="matrix(0.359595,0,0,0.359595,478.045384,1528.816577)">
+            <circle cx="657.5" cy="531.5" r="41.5" style="stroke:rgb(235,235,235);stroke-width:2.78px;"/>
+            <g transform="matrix(1.597484,0,0,1.597484,-768.841853,-271.216412)">
+                <g transform="matrix(50,0,0,50,907.211632,519.987833)">
+                </g>
+                <text x="877.462px" y="519.988px" style="font-family:'AvenirNext-Medium', 'Avenir Next', sans-serif;font-weight:500;font-size:50px;fill:rgb(235,235,235);">1</text>
+            </g>
+        </g>
+        <g transform="matrix(0.359595,0,0,0.359595,478.045384,1634.798239)">
+            <circle cx="657.5" cy="531.5" r="41.5" style="stroke:rgb(235,235,235);stroke-width:2.78px;"/>
+            <g transform="matrix(1.597484,0,0,1.597484,-768.841853,-271.216412)">
+                <g transform="matrix(50,0,0,50,907.211632,519.987833)">
+                </g>
+                <text x="877.462px" y="519.988px" style="font-family:'AvenirNext-Medium', 'Avenir Next', sans-serif;font-weight:500;font-size:50px;fill:rgb(235,235,235);">2</text>
+            </g>
+        </g>
+        <g transform="matrix(0.873148,0,0,0.773892,145.38287,365.847675)">
+            <rect x="1035" y="1481" width="387" height="367" style="fill:rgb(235,235,235);stroke:black;stroke-width:1.21px;"/>
+        </g>
+        <g transform="matrix(0.873148,0,0,0.350938,145.38287,1305.368297)">
+            <rect x="1035" y="1481" width="387" height="367" style="fill:rgb(235,235,235);stroke:black;stroke-width:1.5px;"/>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,147.245474,861.887454)">
+            <g transform="matrix(50,0,0,50,1272.168532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">SL<tspan x="1174.469px 1215.469px 1243.969px " y="1657.904px 1657.904px 1657.904px ">OTS</tspan></text>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,514.58395,730.186312)">
+            <g transform="matrix(50,0,0,50,1404.168532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">C<tspan x="1157.669px " y="1657.904px ">O</tspan>NSUMES</text>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,514.58395,1043.311624)">
+            <g transform="matrix(50,0,0,50,1418.268532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">S<tspan x="1149.569px 1175.069px 1210.069px " y="1657.904px 1657.904px 1657.904px ">TAF</tspan>F POOL</text>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,514.58395,857.941505)">
+            <g transform="matrix(50,0,0,50,1589.568532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">MA<tspan x="1200.669px 1236.669px " y="1657.904px 1657.904px ">CH</tspan>INES / <tspan x="1423.869px 1450.869px 1493.369px " y="1657.904px 1657.904px 1657.904px ">TOO</tspan>LS</text>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,184.58395,823.242565)">
+            <g transform="matrix(50,0,0,50,1329.268532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">S<tspan x="1149.569px 1175.069px 1207.069px 1235.569px " y="1657.904px 1657.904px 1657.904px 1657.904px ">TATI</tspan>ON</text>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,180.650161,908.542834)">
+            <g transform="matrix(50,0,0,50,1278.168532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">S<tspan x="1149.569px 1178.069px " y="1657.904px 1657.904px ">TE</tspan>P 1</text>
+        </g>
+        <g transform="matrix(0.249368,0,0,0.249368,456.781664,1335.122936)">
+            <g transform="matrix(50,0,0,50,1536.368532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Bold', 'Avenir Next', sans-serif;font-weight:700;font-size:50px;">UPS<tspan x="1220.069px 1249.119px " y="1657.904px 1657.904px ">TR</tspan>EAM P<tspan x="1438.319px 1474.769px 1507.319px " y="1657.904px 1657.904px 1657.904px ">ART</tspan></text>
+        </g>
+        <g transform="matrix(0.249368,0,0,0.249368,458.166119,1380.122897)">
+            <g transform="matrix(50,0,0,50,1215.368532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Bold', 'Avenir Next', sans-serif;font-weight:700;font-size:50px;">ppl</text>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,180.650161,1014.524497)">
+            <g transform="matrix(50,0,0,50,1278.168532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">S<tspan x="1149.569px 1178.069px " y="1657.904px 1657.904px ">TE</tspan>P 2</text>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,308.781827,908.320222)">
+            <g transform="matrix(50,0,0,50,1224.418532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">45m</text>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,210.518274,975.942758)">
+            <g transform="matrix(50,0,0,50,1151.268532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">4</text>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,344.795538,861.44223)">
+            <g transform="matrix(50,0,0,50,1151.268532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">3</text>
+        </g>
+        <g transform="matrix(0.494694,0,0,0.494694,330.548356,1014.301884)">
+            <g transform="matrix(50,0,0,50,1180.418532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Regular', 'Avenir Next', sans-serif;font-size:50px;">2h</text>
+        </g>
+        <g transform="matrix(1,0,0,1,0,-16.386142)">
+            <path d="M694,1713L923,1713" style="fill:none;stroke:black;stroke-width:1px;stroke-dasharray:2,2,0,0,0,0;"/>
+        </g>
+        <g transform="matrix(0.303162,0,0,0.303162,732.367503,1080.705222)">
+            <path d="M1117,1574.9L1117,1845.1M2034,1574.9L2034,1845.1M1422.667,1576L1422.667,1844M1728.333,1576L1728.333,1844M1117,1576L2034,1576M1117,1629.6L2034,1629.6M1117,1683.2L2034,1683.2M1117,1736.8L2034,1736.8M1117,1790.4L2034,1790.4M1117,1844L2034,1844" style="fill:none;stroke:black;stroke-width:2.2px;stroke-linecap:butt;stroke-miterlimit:2;"/>
+        </g>
+        <g transform="matrix(0.303162,0,0,0.303162,733.455829,1423.215921)">
+            <g transform="matrix(50,0,0,50,1220.262044,1613.148763)">
+            </g>
+            <text x="1118.333px" y="1613.149px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:50px;">Staf<tspan x="1206.37px " y="1613.149px ">f</tspan></text>
+            <g transform="matrix(50,0,0,50,1439.258138,1613.148763)">
+            </g>
+            <text x="1347.583px" y="1613.149px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:50px;">Skill</text>
+            <g transform="matrix(50,0,0,50,1744.509115,1613.148763)">
+            </g>
+            <text x="1576.833px" y="1613.149px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:50px;">T<tspan x="1605.52px 1622.17px " y="1613.149px 1613.149px ">ra</tspan>ined</text>
+            <g transform="matrix(50,0,0,50,1914.457357,1613.148763)">
+            </g>
+            <text x="1806.083px" y="1613.149px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:50px;">Alloc</text>
+            <g transform="matrix(50,0,0,50,1173.948568,1666.748763)">
+            </g>
+            <text x="1118.333px" y="1666.749px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:50px;">10</text>
+            <g transform="matrix(50,0,0,50,1456.006185,1666.748763)">
+            </g>
+            <text x="1347.583px" y="1666.749px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:50px;">123x</text>
+            <g transform="matrix(50,0,0,50,1604.640951,1666.748763)">
+            </g>
+            <text x="1576.833px" y="1666.749px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:50px;">4</text>
+            <g transform="matrix(50,0,0,50,1833.890951,1666.748763)">
+            </g>
+            <text x="1806.083px" y="1666.749px" style="font-family:'ArialMT', 'Arial', sans-serif;font-size:50px;">4</text>
+            <path d="M1117,1574.9L1117,1684.3M2034,1574.9L2034,1684.3M1346.25,1576L1346.25,1683.2M1575.5,1576L1575.5,1683.2M1804.75,1576L1804.75,1683.2M1117,1576L2034,1576M1117,1629.6L2034,1629.6M1117,1683.2L2034,1683.2" style="fill:none;stroke:black;stroke-width:2.2px;stroke-linecap:butt;stroke-miterlimit:2;"/>
+        </g>
+        <g transform="matrix(0.303162,0,0,0.303162,732.515911,1208.460415)">
+            <path d="M1117,1574.9L1117,1845.1M2034,1574.9L2034,1845.1M1422.667,1576L1422.667,1844M1728.333,1576L1728.333,1844M1117,1576L2034,1576M1117,1629.6L2034,1629.6M1117,1683.2L2034,1683.2M1117,1736.8L2034,1736.8M1117,1790.4L2034,1790.4M1117,1844L2034,1844" style="fill:none;stroke:black;stroke-width:2.2px;stroke-linecap:butt;stroke-miterlimit:2;"/>
+        </g>
+        <g transform="matrix(1,0,0,1,-809.933789,-95.857186)">
+            <circle cx="1554.5" cy="1862.5" r="7.5" style="fill:rgb(242,175,13);stroke:black;stroke-width:1px;"/>
+            <g transform="matrix(1,0,0,1,24,0)">
+                <circle cx="1554.5" cy="1862.5" r="7.5" style="fill:rgb(235,235,235);stroke:black;stroke-width:1px;"/>
+            </g>
+            <g transform="matrix(1,0,0,1,48,0)">
+                <circle cx="1554.5" cy="1862.5" r="7.5" style="fill:rgb(67,242,13);stroke:black;stroke-width:1px;"/>
+            </g>
+        </g>
+        <path d="M811.072,1766.643L940,1766.643L1049.092,1649.938" style="fill:none;stroke:black;stroke-width:1px;"/>
+        <g transform="matrix(1,0,0,0.574137,0,942.213567)">
+            <path d="M788.491,1477.208L986.046,1477.208L1049.092,1649.938" style="fill:none;stroke:black;stroke-width:1.23px;"/>
+        </g>
+        <g transform="matrix(3.173077,0,0,0.270627,-4199.480769,1322.242567)">
+            <path d="M1713,2047L1713,2081C1713,2090.383 1712.35,2098 1711.55,2098L1662.45,2098C1661.65,2098 1661,2090.383 1661,2081L1661,2047C1661,2037.617 1661.65,2030 1662.45,2030L1711.55,2030C1712.35,2030 1713,2037.617 1713,2047Z" style="fill:rgb(67,242,13);stroke:black;stroke-width:0.44px;"/>
+        </g>
+        <g transform="matrix(0.249368,0,0,0.249368,798.232419,1471.808489)">
+            <g transform="matrix(50,0,0,50,1342.068532,1657.903836)">
+            </g>
+            <text x="1122.269px" y="1657.904px" style="font-family:'AvenirNext-Bold', 'Avenir Next', sans-serif;font-weight:700;font-size:50px;">RIGGING</text>
+        </g>
+        <g transform="matrix(0,0.476384,-0.608424,0,2223.428635,1338.253554)">
+            <path d="M1126.219,1656.054L1126.219,1649.204L1141.519,1642.854L1126.219,1636.304L1126.219,1629.504L1151.619,1640.204L1151.619,1645.354L1126.219,1656.054Z" style="fill-rule:nonzero;"/>
+        </g>
+    </g>
+</svg>

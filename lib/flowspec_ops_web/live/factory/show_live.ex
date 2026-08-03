@@ -26,7 +26,9 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
        add_node_line_id: nil,
        add_step_node_id: nil,
        add_step_name: "",
-       commitment_edit_open: false
+       commitment_edit_open: false,
+       step_edit_id: nil,
+       station_edit_id: nil
      )}
   end
 
@@ -180,6 +182,256 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   end
 
   @impl true
+  def handle_event("toggle_gate", %{"id" => id}, socket) do
+    node = Enum.find(socket.assigns.factory.nodes, &(to_string(&1.id) == id))
+
+    if node do
+      case Factories.update_node(node, %{gate: !node.gate}) do
+        {:ok, _} -> {:noreply, reload_factory(socket)}
+        {:error, _} -> {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("open_step_edit", %{"id" => id}, socket) do
+    {:noreply, assign(socket, step_edit_id: String.to_integer(id), station_edit_id: nil)}
+  end
+
+  @impl true
+  def handle_event("cancel_step_edit", _params, socket) do
+    {:noreply, assign(socket, step_edit_id: nil)}
+  end
+
+  @impl true
+  def handle_event("save_step", params, socket) do
+    step_id = String.to_integer(params["step_id"])
+    all_steps = socket.assigns.factory.nodes |> Enum.flat_map(& &1.steps)
+    step = Enum.find(all_steps, &(&1.id == step_id))
+
+    if step do
+      qty = parse_optional_positive_int(Map.get(params, "qty_per_unit"))
+      each = parse_optional_positive_int(Map.get(params, "minutes_each"))
+      people = parse_optional_positive_int(Map.get(params, "people"))
+
+      est =
+        cond do
+          is_integer(qty) and is_integer(each) -> qty * each
+          true -> parse_optional_positive_int(Map.get(params, "estimated_minutes"))
+        end
+
+      parallel_enabled = params |> Map.get("parallel_enabled", "") |> to_string()
+      parallel_raw = params |> Map.get("parallel_with_step_id", "") |> to_string() |> String.trim()
+
+      parallel_id =
+        cond do
+          parallel_enabled != "true" -> nil
+          parallel_raw in ["", "none"] -> nil
+          true ->
+            case Integer.parse(parallel_raw) do
+              {i, _} -> i
+              :error -> nil
+            end
+        end
+
+      parallel_id = if parallel_id == step_id, do: nil, else: parallel_id
+
+      attrs = %{
+        name: params |> Map.get("name", step.name) |> String.trim(),
+        qty_per_unit: qty,
+        minutes_each: each,
+        people: people,
+        estimated_minutes: est,
+        specs: blank_to_nil(Map.get(params, "specs")),
+        parallel_with_step_id: parallel_id
+      }
+
+      case Factories.update_step(step, attrs) do
+        {:ok, _} ->
+          # Keep popup open so cycle math updates live; Close dismisses.
+          {:noreply, reload_factory(socket) |> assign(step_edit_id: step_id)}
+
+        {:error, _} ->
+          {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("add_step_item", params, socket) do
+    step_id = String.to_integer(params["step_id"])
+    all_steps = socket.assigns.factory.nodes |> Enum.flat_map(& &1.steps)
+    step = Enum.find(all_steps, &(&1.id == step_id))
+
+    if step do
+      name = params |> Map.get("name", "") |> String.trim()
+      qty = parse_optional_positive_float(Map.get(params, "qty")) || 1.0
+      cost = parse_money_to_cents(Map.get(params, "unit_cost"))
+      kind = params |> Map.get("kind", "equipment") |> String.trim()
+
+      kind_atom =
+        case kind do
+          "material" -> :material
+          _ -> :equipment
+        end
+
+      if name != "" do
+        next_pos = length(Map.get(step, :items) || []) + 1
+
+        pack_qty = parse_optional_positive_float(Map.get(params, "pack_qty"))
+
+        case Factories.create_step_item(%{
+               factory_node_step_id: step.id,
+               kind: kind_atom,
+               name: name,
+               qty: qty,
+               unit_cost_cents: cost,
+               pack_qty: if(kind_atom == :material, do: pack_qty, else: nil),
+               position: next_pos,
+               note: blank_to_nil(Map.get(params, "note"))
+             }) do
+          {:ok, _} -> {:noreply, reload_factory(socket)}
+          {:error, _} -> {:noreply, socket}
+        end
+      else
+        {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("delete_step_item", %{"id" => id}, socket) do
+    all_items =
+      socket.assigns.factory.nodes
+      |> Enum.flat_map(& &1.steps)
+      |> Enum.flat_map(fn s -> Map.get(s, :items) || [] end)
+
+    item = Enum.find(all_items, &(to_string(&1.id) == id))
+
+    if item do
+      Factories.delete_step_item(item)
+      {:noreply, reload_factory(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("update_step_item", params, socket) do
+    item_id = params |> Map.get("item_id") || Map.get(params, "id")
+    item_id = if is_binary(item_id), do: String.to_integer(item_id), else: item_id
+
+    all_items =
+      socket.assigns.factory.nodes
+      |> Enum.flat_map(& &1.steps)
+      |> Enum.flat_map(fn s -> Map.get(s, :items) || [] end)
+
+    item = Enum.find(all_items, &(&1.id == item_id))
+
+    if item do
+      attrs = %{}
+
+      attrs =
+        if Map.has_key?(params, "name") do
+          name = params["name"] |> to_string() |> String.trim()
+          if name != "", do: Map.put(attrs, :name, name), else: attrs
+        else
+          attrs
+        end
+
+      attrs =
+        if Map.has_key?(params, "qty") do
+          case parse_optional_positive_float(params["qty"]) do
+            nil -> attrs
+            q -> Map.put(attrs, :qty, q)
+          end
+        else
+          attrs
+        end
+
+      attrs =
+        if Map.has_key?(params, "unit_cost") do
+          Map.put(attrs, :unit_cost_cents, parse_money_to_cents(params["unit_cost"]))
+        else
+          attrs
+        end
+
+      attrs =
+        if Map.has_key?(params, "kind") do
+          kind =
+            case params["kind"] do
+              "material" -> :material
+              _ -> :equipment
+            end
+
+          Map.put(attrs, :kind, kind)
+        else
+          attrs
+        end
+
+      attrs =
+        if Map.has_key?(params, "pack_qty") do
+          Map.put(attrs, :pack_qty, parse_optional_positive_float(params["pack_qty"]))
+        else
+          attrs
+        end
+
+      if attrs == %{} do
+        {:noreply, socket}
+      else
+        case Factories.update_step_item(item, attrs) do
+          {:ok, _} -> {:noreply, reload_factory(socket)}
+          {:error, _} -> {:noreply, socket}
+        end
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("open_station_edit", %{"id" => id}, socket) do
+    {:noreply, assign(socket, station_edit_id: String.to_integer(id), step_edit_id: nil)}
+  end
+
+  @impl true
+  def handle_event("cancel_station_edit", _params, socket) do
+    {:noreply, assign(socket, station_edit_id: nil)}
+  end
+
+  @impl true
+  def handle_event("save_station", params, socket) do
+    node_id = String.to_integer(params["node_id"])
+    node = Enum.find(socket.assigns.factory.nodes, &(&1.id == node_id))
+
+    if node do
+      attrs = %{
+        name: params |> Map.get("name", node.name) |> String.trim(),
+        slots: parse_optional_positive_int(Map.get(params, "slots")),
+        note: blank_to_nil(Map.get(params, "note")),
+        product_ready: checkbox_true?(params, "product_ready"),
+        method_instruction: checkbox_true?(params, "method_instruction")
+      }
+
+      case Factories.update_node(node, attrs) do
+        {:ok, _} ->
+          {:noreply, reload_factory(socket) |> assign(station_edit_id: nil)}
+
+        {:error, _} ->
+          {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <div class="space-y-3">
@@ -223,6 +475,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
         <%= case @selected_tab do %>
           <% "net" -> %>
             <.project_net
+              factory={@factory}
               lines={@factory.lines}
               ungrouped_nodes={@ungrouped_nodes}
               links={@factory.links}
@@ -244,6 +497,16 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       </div>
 
       <.commitment_edit_modal :if={@commitment_edit_open} factory={@factory} />
+      <.step_edit_modal
+        :if={@step_edit_id}
+        factory={@factory}
+        step_edit_id={@step_edit_id}
+      />
+      <.station_edit_modal
+        :if={@station_edit_id}
+        factory={@factory}
+        station_edit_id={@station_edit_id}
+      />
     </div>
     """
   end
@@ -276,12 +539,113 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   defp parse_optional_positive_int(n) when is_integer(n) and n > 0, do: n
   defp parse_optional_positive_int(_), do: nil
 
+  defp parse_optional_positive_float(nil), do: nil
+  defp parse_optional_positive_float(""), do: nil
+
+  defp parse_optional_positive_float(str) when is_binary(str) do
+    cleaned =
+      str
+      |> String.trim()
+      |> String.replace(",", "")
+
+    # Allow ".25" as well as "0.25"
+    cleaned =
+      cond do
+        String.starts_with?(cleaned, ".") -> "0" <> cleaned
+        String.starts_with?(cleaned, "-.") -> "-0" <> String.trim_leading(cleaned, "-")
+        true -> cleaned
+      end
+
+    case Float.parse(cleaned) do
+      {f, rest} ->
+        rest = String.trim(rest)
+
+        cond do
+          rest != "" -> nil
+          f > 0 -> f
+          true -> nil
+        end
+
+      :error ->
+        case Integer.parse(cleaned) do
+          {i, ""} when i > 0 -> i * 1.0
+          _ -> nil
+        end
+    end
+  end
+
+  defp parse_optional_positive_float(n) when is_integer(n) and n > 0, do: n * 1.0
+  defp parse_optional_positive_float(n) when is_float(n) and n > 0, do: n
+  defp parse_optional_positive_float(_), do: nil
+
+  defp format_qty_input(nil), do: ""
+  defp format_qty_input(n) when is_integer(n), do: Integer.to_string(n)
+
+  defp format_qty_input(n) when is_float(n) do
+    # Avoid 0.25000000001 noise; keep useful decimals
+    s = :erlang.float_to_binary(n, decimals: 6) |> String.trim_trailing("0") |> String.trim_trailing(".")
+    if s == "" or s == "-0", do: "0", else: s
+  end
+
   defp required_daily_rate(%{target_qty: qty, window_days: days})
        when is_integer(qty) and is_integer(days) and days > 0 do
     Float.round(qty / days * 1.0, 1)
   end
 
   defp required_daily_rate(_), do: nil
+
+  defp required_weekly_rate(%{target_qty: qty, window_days: days})
+       when is_integer(qty) and is_integer(days) and days > 0 do
+    Float.round(qty * 7.0 / days, 1)
+  end
+
+  defp required_weekly_rate(_), do: nil
+
+  # If setup sits inside the commitment window, productive days shrink.
+  defp required_weekly_rate_after_setup(%{target_qty: qty, window_days: window}, setup_days)
+       when is_integer(qty) and is_integer(window) and is_integer(setup_days) and setup_days > 0 do
+    productive = window - setup_days
+
+    if productive > 0 do
+      Float.round(qty * 7.0 / productive, 1)
+    else
+      nil
+    end
+  end
+
+  defp required_weekly_rate_after_setup(_, _), do: nil
+
+  # Designed output if one frame completes every lead_time_days.
+  defp designed_weekly_rate(%{lead_time_days: days}) when is_integer(days) and days > 0 do
+    Float.round(7.0 / days, 1)
+  end
+
+  defp designed_weekly_rate(_), do: nil
+
+  defp format_rate(nil), do: "—"
+  defp format_rate(n) when is_float(n), do: :erlang.float_to_binary(n, decimals: 1)
+  defp format_rate(n) when is_integer(n), do: Integer.to_string(n)
+
+  defp supplier_vs_commitment(factory, node) do
+    need_wk = required_weekly_rate(factory)
+    need_after_setup = required_weekly_rate_after_setup(factory, node.setup_days)
+    have_wk = designed_weekly_rate(node)
+
+    gap =
+      if is_float(need_wk) and is_float(have_wk) do
+        Float.round(need_wk - have_wk, 1)
+      else
+        nil
+      end
+
+    %{
+      need_wk: need_wk,
+      need_after_setup: need_after_setup,
+      have_wk: have_wk,
+      gap_wk: gap,
+      short?: is_float(gap) and gap > 0
+    }
+  end
 
   defp commitment_header(assigns) do
     rate = required_daily_rate(assigns.factory)
@@ -386,7 +750,14 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       <% end %>
 
       <%= for line <- @lines do %>
-        <.line_section line={line} add_step_node_id={@add_step_node_id} add_step_name={@add_step_name} />
+        <.line_section
+          factory={@factory}
+          line={line}
+          links={@links}
+          all_nodes={@factory.nodes}
+          add_step_node_id={@add_step_node_id}
+          add_step_name={@add_step_name}
+        />
       <% end %>
 
       <%= if @ungrouped_nodes != [] do %>
@@ -395,8 +766,15 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
             Ungrouped
           </div>
           <div class="flex flex-wrap items-start gap-4">
-            <%= for node <- @ungrouped_nodes do %>
-              <.node_card node={node} add_step_node_id={@add_step_node_id} add_step_name={@add_step_name} />
+            <%= for {node, seq} <- Enum.with_index(@ungrouped_nodes, 1) do %>
+              <.node_card
+                factory={@factory}
+                node={node}
+                sequence={seq}
+                links={@links}
+                add_step_node_id={@add_step_node_id}
+                add_step_name={@add_step_name}
+              />
             <% end %>
           </div>
         </div>
@@ -449,57 +827,228 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
 
   defp line_section(assigns) do
     sorted = Enum.sort_by(assigns.line.nodes, & &1.position)
-    assigns = assign(assigns, sorted_nodes: sorted)
+    display_items = line_display_items(sorted)
+    spine = line_spine(sorted, assigns.links || [], assigns.all_nodes || [])
+
+    assigns =
+      assigns
+      |> assign(:sorted_nodes, sorted)
+      |> assign(:display_items, display_items)
+      |> assign(:spine, spine)
 
     ~H"""
     <div class="space-y-2">
-      <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-        <%= @line.name %>
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          <%= @line.name %>
+        </div>
+        <%= if @spine != [] do %>
+          <div class="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-zinc-600 dark:text-zinc-300">
+            <%= for {seg, idx} <- Enum.with_index(@spine) do %>
+              <%= if idx > 0 do %>
+                <span class="text-zinc-300 dark:text-zinc-600">→</span>
+              <% end %>
+              <span class={
+                [
+                  "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-medium tabular-nums",
+                  seg.jump &&
+                    "border-dashed border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200",
+                  !seg.jump &&
+                    "border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-800"
+                ]
+              }>
+                <span class="max-w-[9rem] truncate"><%= seg.name %></span>
+                <%= if seg.mark do %>
+                  <span class="text-[10px] font-semibold text-amber-700 dark:text-amber-300"><%= seg.mark %></span>
+                <% end %>
+              </span>
+            <% end %>
+          </div>
+        <% end %>
       </div>
 
       <div class="flex flex-wrap items-start gap-4">
-        <%= for node <- @sorted_nodes do %>
-          <.node_card node={node} add_step_node_id={@add_step_node_id} add_step_name={@add_step_name} />
+        <%= for {item, seq} <- Enum.with_index(@display_items, 1) do %>
+          <%= case item do %>
+            <% {:group, name, members} -> %>
+              <.storage_group_card
+                name={name}
+                members={members}
+                sequence={seq}
+                links={@links}
+                line_nodes={@sorted_nodes}
+              />
+            <% {:node, node} -> %>
+              <.node_card
+                factory={@factory}
+                node={node}
+                sequence={seq}
+                links={@links}
+                add_step_node_id={@add_step_node_id}
+                add_step_name={@add_step_name}
+              />
+          <% end %>
         <% end %>
       </div>
     </div>
     """
   end
 
+  # Collapse consecutive storage_group members into one display item.
+  defp line_display_items(nodes) do
+    nodes
+    |> Enum.reduce([], fn node, acc ->
+      group = node.storage_group
+
+      case {group, acc} do
+        {g, [{:group, g, members} | rest]} when is_binary(g) and g != "" ->
+          [{:group, g, members ++ [node]} | rest]
+
+        {g, _} when is_binary(g) and g != "" ->
+          [{:group, g, [node]} | acc]
+
+        _ ->
+          [{:node, node} | acc]
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  # Compact spine. Storage groups collapse to one chip with Σ slots.
+  # Ends with ↓ target when the line hands off to another line.
+  defp line_spine(nodes, links, all_nodes) when is_list(nodes) do
+    line_ids = MapSet.new(Enum.map(nodes, & &1.id))
+
+    segs =
+      nodes
+      |> line_display_items()
+      |> Enum.map(fn
+        {:group, name, members} ->
+          total = members |> Enum.map(fn m -> m.slots || 0 end) |> Enum.sum()
+          %{id: name, name: name, mark: "(#{total})", jump: false}
+
+        {:node, node} ->
+          mark =
+            cond do
+              node.kind == :transport && node.batch_size -> "×#{node.batch_size}"
+              node.kind in [:work_cell, :queue] && node.slots -> "(#{node.slots})"
+              true -> nil
+            end
+
+          %{id: node.id, name: node.name, mark: mark, jump: false}
+      end)
+
+    last = List.last(nodes)
+
+    jump =
+      if last do
+        links
+        |> Enum.filter(&(&1.from_node_id == last.id && &1.to_node))
+        |> Enum.find(fn link -> not MapSet.member?(line_ids, link.to_node_id) end)
+      else
+        nil
+      end
+
+    case jump do
+      %{to_node: to_node, label: label} ->
+        mark =
+          cond do
+            is_binary(label) and label != "" -> label
+            last.kind == :transport && last.batch_size -> "×#{last.batch_size}"
+            true -> nil
+          end
+
+        # Prefer line name of target if we can resolve it from all_nodes (same node).
+        _ = all_nodes
+
+        segs ++ [%{id: to_node.id, name: "↓ #{to_node.name}", mark: mark, jump: true}]
+
+      _ ->
+        segs
+    end
+  end
+
+  defp expected_weekly_in(node, links) do
+    links
+    |> Enum.filter(&(&1.to_node_id == node.id && &1.from_node && &1.from_node.kind == :transport))
+    |> Enum.map(fn l -> l.from_node.batch_size || 0 end)
+    |> Enum.sum()
+    |> case do
+      0 -> nil
+      n -> n
+    end
+  end
+
+  defp inbound_ship_marks(node, links) do
+    links
+    |> Enum.filter(&(&1.to_node_id == node.id && &1.from_node && &1.from_node.kind == :transport))
+    |> Enum.map(fn l ->
+      t = l.from_node
+      qty = t.batch_size
+      day = t.ship_weekday && String.slice(String.capitalize(t.ship_weekday), 0, 3)
+      cond do
+        qty && day -> "#{qty} #{day}"
+        qty -> "×#{qty}"
+        true -> nil
+      end
+    end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp peak_step_people(steps) do
+    steps
+    |> Enum.map(& &1.people)
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> nil
+      list -> Enum.max(list)
+    end
+  end
+
   # Pattern-matched dispatch by node kind
   defp node_card(%{node: %{kind: :supplier}} = assigns) do
     ~H"""
-    <.supplier_card node={@node} />
+    <.supplier_card factory={@factory} node={@node} sequence={@sequence} />
     """
   end
 
   defp node_card(%{node: %{kind: :transport}} = assigns) do
     ~H"""
-    <.transport_card node={@node} />
+    <.transport_card node={@node} sequence={@sequence} />
     """
   end
 
   defp node_card(%{node: %{kind: :queue}} = assigns) do
     ~H"""
-    <.queue_card node={@node} />
+    <.queue_card node={@node} sequence={@sequence} />
     """
   end
 
   defp node_card(assigns) do
     ~H"""
-    <.work_cell_card node={@node} add_step_node_id={@add_step_node_id} add_step_name={@add_step_name} />
+    <.work_cell_card
+      factory={@factory}
+      node={@node}
+      sequence={@sequence}
+      links={@links}
+      add_step_node_id={@add_step_node_id}
+      add_step_name={@add_step_name}
+    />
     """
   end
 
   # --- Kind-specific cards (calijane2-shaped) ---
 
   defp supplier_card(assigns) do
+    vs = supplier_vs_commitment(assigns.factory, assigns.node)
+    assigns = assign(assigns, :vs, vs)
+
     ~H"""
     <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
         <div class="flex items-center gap-2 border-b border-green-300 bg-green-100 px-2.5 py-1.5 dark:border-green-700 dark:bg-green-900/30">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-green-400 text-[10px] font-bold tabular-nums text-green-800 dark:border-green-500 dark:text-green-200">
-            <%= @node.position %>
+            <%= @sequence || @node.position %>
           </span>
           <h4 class="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
             <%= @node.name %>
@@ -545,6 +1094,51 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
             <% end %>
           </div>
 
+          <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
+            vs commitment
+          </div>
+          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
+            <span class="text-zinc-500 dark:text-zinc-400">Need</span>
+            <span class="tabular-nums text-right">
+              <%= if @vs.need_wk, do: "#{format_rate(@vs.need_wk)}/wk", else: "—" %>
+            </span>
+            <%= if @vs.need_after_setup do %>
+              <span class="text-zinc-500 dark:text-zinc-400">Need after setup</span>
+              <span class="tabular-nums text-right" title="If setup sits inside the window">
+                <%= format_rate(@vs.need_after_setup) %>/wk
+              </span>
+            <% end %>
+            <span class="text-zinc-500 dark:text-zinc-400">Designed</span>
+            <span class="tabular-nums text-right">
+              <%= if @vs.have_wk, do: "#{format_rate(@vs.have_wk)}/wk", else: "—" %>
+            </span>
+            <span class="text-zinc-500 dark:text-zinc-400">Gap</span>
+            <span class={
+              [
+                "tabular-nums text-right font-semibold",
+                @vs.short? && "text-amber-700 dark:text-amber-300",
+                !@vs.short? && @vs.gap_wk && "text-emerald-700 dark:text-emerald-300"
+              ]
+            }>
+              <%= cond do %>
+                <% is_nil(@vs.gap_wk) -> %>
+                  —
+                <% @vs.short? -> %>
+                  short <%= format_rate(@vs.gap_wk) %>/wk
+                <% @vs.gap_wk < 0 -> %>
+                  headroom <%= format_rate(abs(@vs.gap_wk)) %>/wk
+                <% true -> %>
+                  matched
+              <% end %>
+            </span>
+          </div>
+
+          <%= if @vs.short? do %>
+            <div class="border-t border-zinc-100 px-2.5 py-1 text-[10px] leading-snug text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+              Design cannot cover commitment at this cadence. Elevate supply rate or change the promise.
+            </div>
+          <% end %>
+
           <%= if @node.inspection_point do %>
             <div class="border-t border-zinc-100 px-2.5 py-1 text-[11px] text-amber-700 dark:border-zinc-700 dark:text-amber-300">
               Inspection gate
@@ -558,9 +1152,16 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
         </div>
         <div class="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
           <span class="tabular-nums">
-            <%= if @node.setup_days, do: "Setup #{@node.setup_days}d", else: "Supplier" %>
+            <%= cond do %>
+              <% @vs.have_wk && @vs.need_wk -> %>
+                <%= format_rate(@vs.have_wk) %>/wk vs <%= format_rate(@vs.need_wk) %>
+              <% @node.setup_days -> %>
+                Setup <%= @node.setup_days %>d
+              <% true -> %>
+                Supplier
+            <% end %>
           </span>
-          <button type="button" phx-click="delete_node" phx-value-id={@node.id} class="text-zinc-400 hover:text-red-500" title="Remove">×</button>
+          <button type="button" phx-click="delete_node" phx-value-id={@node.id} data-confirm={"Remove #{@node.name}? This cannot be undone."} class="text-zinc-400 hover:text-red-500" title="Remove">×</button>
         </div>
       </div>
     </div>
@@ -595,7 +1196,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
         <div class="flex items-center gap-2 border-b border-amber-300 bg-amber-100 px-2.5 py-1.5 dark:border-amber-700 dark:bg-amber-900/30">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-amber-400 text-[10px] font-bold tabular-nums text-amber-800 dark:border-amber-500 dark:text-amber-200">
-            <%= @node.position %>
+            <%= @sequence || @node.position %>
           </span>
           <h4 class="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
             <%= @node.name %>
@@ -643,11 +1244,122 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
                 Transport
             <% end %>
           </span>
-          <button type="button" phx-click="delete_node" phx-value-id={@node.id} class="text-zinc-400 hover:text-red-500" title="Remove">×</button>
+          <button type="button" phx-click="delete_node" phx-value-id={@node.id} data-confirm={"Remove #{@node.name}? This cannot be undone."} class="text-zinc-400 hover:text-red-500" title="Remove">×</button>
         </div>
       </div>
     </div>
     """
+  end
+
+  defp storage_group_card(assigns) do
+    members = Enum.sort_by(assigns.members, & &1.position)
+
+    total =
+      members
+      |> Enum.map(fn m -> m.slots || 0 end)
+      |> Enum.sum()
+
+    # Method steps live on the first lot node (group method).
+    steps =
+      members
+      |> List.first()
+      |> case do
+        nil -> []
+        lot -> lot.steps || []
+      end
+      |> Enum.sort_by(& &1.position)
+
+    flooring =
+      (assigns[:line_nodes] || [])
+      |> Enum.find(&(&1.name == "Flooring"))
+
+    pass_mark =
+      cond do
+        flooring && flooring.slots -> "(#{flooring.slots})"
+        true -> nil
+      end
+
+    assigns =
+      assigns
+      |> assign(:total, total)
+      |> assign(:members, members)
+      |> assign(:steps, steps)
+      |> assign(:pass_mark, pass_mark)
+
+    ~H"""
+    <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
+      <div class="flex flex-col overflow-hidden rounded-none border border-zinc-600 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
+        <div class="flex items-center gap-2 border-b border-sky-400/80 bg-sky-950 px-2.5 py-1.5 text-sky-50 dark:border-sky-600 dark:bg-sky-950">
+          <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sky-300 text-[10px] font-bold tabular-nums text-sky-100">
+            <%= @sequence %>
+          </span>
+          <h4 class="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide">
+            <%= @name %> LOT
+          </h4>
+          <span class="ml-auto shrink-0 tabular-nums text-[10px] font-semibold text-sky-100">
+            <%= @total %>
+          </span>
+        </div>
+
+        <div class="divide-y divide-zinc-700/80 bg-zinc-900 text-zinc-100">
+          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 px-2.5 py-1.5 text-[11px]">
+            <div class="font-medium text-zinc-200">Passthrough</div>
+            <div class="tabular-nums text-right text-zinc-300">
+              → <%= if @pass_mark, do: "#{@pass_mark} ", else: "" %>Flooring
+            </div>
+          </div>
+
+          <%= for lot <- @members do %>
+            <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 px-2.5 py-1.5 text-[11px]">
+              <div class="min-w-0">
+                <div class="truncate font-medium"><%= lot.name %></div>
+                <%= if lot.location_note do %>
+                  <div class="text-[10px] text-zinc-400"><%= lot.location_note %></div>
+                <% end %>
+              </div>
+              <div class="tabular-nums text-right font-semibold">
+                <%= lot.slots || "—" %>
+              </div>
+            </div>
+          <% end %>
+        </div>
+
+        <%= if @steps != [] do %>
+          <div class="border-t border-zinc-700 bg-zinc-950 py-0.5 text-zinc-100">
+            <%= for step <- @steps do %>
+              <div class="grid grid-cols-[1.5rem_minmax(0,1fr)_2rem] gap-1.5 px-2.5 py-1.5 text-xs">
+                <span class="mt-0.5 inline-flex size-5 items-center justify-center rounded-full border border-zinc-600 text-[10px] font-bold tabular-nums text-zinc-400">
+                  <%= step.position %>
+                </span>
+                <div class="min-w-0">
+                  <div class="truncate font-medium text-zinc-100"><%= step.name %></div>
+                  <%= if step.people do %>
+                    <div class="text-[10px] tabular-nums text-zinc-400"><%= step.people %> ppl</div>
+                  <% end %>
+                  <%= for line <- spec_lines(step.specs) do %>
+                    <div class="text-[10px] text-zinc-400"><%= line %></div>
+                  <% end %>
+                </div>
+                <span class="pt-0.5 text-right tabular-nums text-zinc-500">
+                  <%= if step.estimated_minutes, do: "#{step.estimated_minutes}", else: "" %>
+                </span>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  defp spec_lines(nil), do: []
+  defp spec_lines(""), do: []
+
+  defp spec_lines(specs) when is_binary(specs) do
+    specs
+    |> String.split(~r/\r?\n/)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
   end
 
   defp queue_card(assigns) do
@@ -665,7 +1377,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
         <div class="flex items-center gap-2 border-b border-sky-300 bg-sky-100 px-2.5 py-1.5 dark:border-sky-700 dark:bg-sky-900/30">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sky-400 text-[10px] font-bold tabular-nums text-sky-800 dark:border-sky-500 dark:text-sky-200">
-            <%= @node.position %>
+            <%= @sequence || @node.position %>
           </span>
           <h4 class="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
             <%= @node.name %>
@@ -686,7 +1398,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
           <span class="tabular-nums">
             <%= if @node.slots, do: "#{@node.slots} slots", else: "Queue" %>
           </span>
-          <button type="button" phx-click="delete_node" phx-value-id={@node.id} class="text-zinc-400 hover:text-red-500" title="Remove">×</button>
+          <button type="button" phx-click="delete_node" phx-value-id={@node.id} data-confirm={"Remove #{@node.name}? This cannot be undone."} class="text-zinc-400 hover:text-red-500" title="Remove">×</button>
         </div>
       </div>
     </div>
@@ -694,48 +1406,255 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   end
 
   defp work_cell_card(assigns) do
-    est_total =
-      assigns.node.steps
-      |> Enum.map(& &1.estimated_minutes)
+    steps = assigns.node.steps
+
+    step_stats =
+      Enum.map(steps, fn step ->
+        qty = step.qty_per_unit
+        each = step.minutes_each || step.estimated_minutes
+        content =
+          cond do
+            is_integer(qty) and is_integer(step.minutes_each) -> qty * step.minutes_each
+            is_integer(step.estimated_minutes) -> step.estimated_minutes
+            true -> nil
+          end
+
+        people = step.people
+        stream =
+          cond do
+            is_integer(content) and is_integer(people) and people > 0 ->
+              ceil(content / people)
+
+            is_integer(content) ->
+              content
+
+            true ->
+              nil
+          end
+
+        %{step: step, content: content, stream: stream, people: people, qty: qty, each: each}
+      end)
+
+    content_total =
+      step_stats
+      |> Enum.map(& &1.content)
       |> Enum.reject(&is_nil/1)
       |> Enum.sum()
+      |> case do
+        0 -> 0
+        n -> n
+      end
 
-    assigns = assign(assigns, est_total: est_total)
+    # Build parallel groups: linked steps share one time bucket (max stream) and sum people
+    {ea_parallel, ea_phased, crew_designed, peak_phase} = step_timing_summary(steps, step_stats)
+
+    all_items =
+      steps
+      |> Enum.flat_map(fn s -> Map.get(s, :items) || [] end)
+
+    stand_up_cents =
+      all_items
+      |> Enum.map(&FlowspecOps.Factories.FactoryNodeStepItem.stand_up_cents/1)
+      |> Enum.reject(&is_nil/1)
+      |> case do
+        [] -> nil
+        list -> Enum.sum(list)
+      end
+
+    burn_unit_cents =
+      all_items
+      |> Enum.map(&FlowspecOps.Factories.FactoryNodeStepItem.burn_per_unit_cents/1)
+      |> Enum.reject(&is_nil/1)
+      |> case do
+        [] -> nil
+        list -> Enum.sum(list)
+      end
+
+
+    links = assigns[:links] || []
+    factory = assigns[:factory]
+    expected_in = expected_weekly_in(assigns.node, links)
+    need_wk = factory && required_weekly_rate(factory)
+    ship_marks = inbound_ship_marks(assigns.node, links)
+    crew = crew_designed
+    gate? = Map.get(assigns.node, :gate) == true
+    status_circle = work_cell_status_circle(steps, content_total)
+
+    gap =
+      if is_number(expected_in) and is_float(need_wk) do
+        Float.round(need_wk - expected_in * 1.0, 1)
+      else
+        nil
+      end
+
+    assigns =
+      assigns
+      |> assign(:step_stats, step_stats)
+      |> assign(:content_total, content_total)
+      |> assign(:ea_parallel, ea_parallel)
+      |> assign(:ea_phased, ea_phased)
+      |> assign(:expected_in, expected_in)
+      |> assign(:need_wk, need_wk)
+      |> assign(:ship_marks, ship_marks)
+      |> assign(:peak_people, crew_designed)
+      |> assign(:peak_phase, peak_phase)
+      |> assign(:stand_up_cents, stand_up_cents)
+      |> assign(:burn_unit_cents, burn_unit_cents)
+      |> assign(:crew, crew)
+      |> assign(:gate?, gate?)
+      |> assign(:status_circle, status_circle)
+      |> assign(:intake_gap, gap)
+      |> assign(:intake_short?, is_float(gap) and gap > 0)
+      |> assign(:ea_label, format_duration_minutes(ea_parallel))
+      |> assign(:ea_phased_label, format_duration_minutes(ea_phased))
 
     ~H"""
     <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
-        <%# header: line position + station name only; type via header color %>
         <div class="flex items-center gap-2 border-b border-zinc-300 bg-zinc-100 px-2.5 py-1.5 dark:border-zinc-500 dark:bg-zinc-700">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-400 text-[10px] font-bold tabular-nums text-zinc-900 dark:border-zinc-400 dark:text-zinc-100">
-            <%= @node.position %>
+            <%= @sequence || @node.position %>
           </span>
-          <h4 class="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
+          <button
+            type="button"
+            phx-click="open_station_edit"
+            phx-value-id={@node.id}
+            class="min-w-0 flex-1 truncate text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-900 hover:text-indigo-600 dark:text-zinc-100 dark:hover:text-indigo-300"
+            title="Edit station"
+          >
             <%= @node.name %>
-          </h4>
+          </button>
+          <div class="ml-auto flex shrink-0 items-center gap-1">
+            <span
+              class={[
+                "rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                @node.product_ready == true && "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+                @node.product_ready != true && "bg-zinc-200/80 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400"
+              ]}
+              title={if(@node.product_ready == true, do: "Product ready", else: "Product not ready — drawings/definition open")}
+            >
+              P
+            </span>
+            <span
+              class={[
+                "rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                @node.method_instruction == true && "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+                @node.method_instruction != true && "bg-zinc-200/80 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400"
+              ]}
+              title={if(@node.method_instruction == true, do: "Method instruction in place", else: "Method instruction not confirmed")}
+            >
+              M
+            </span>
+            <button
+              type="button"
+              phx-click="toggle_gate"
+              phx-value-id={@node.id}
+              class={[
+                "inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded px-1 text-[10px] font-bold tracking-wide transition-colors",
+                @gate? &&
+                  "bg-amber-400 text-amber-950 ring-1 ring-amber-500 dark:bg-amber-500 dark:text-amber-950",
+                !@gate? &&
+                  "text-zinc-300 hover:text-amber-600 dark:text-zinc-600 dark:hover:text-amber-400"
+              ]}
+              title={if @gate?, do: "Gate on — click to clear", else: "Mark gate [G]"}
+              aria-label={if @gate?, do: "Clear gate mark", else: "Set gate mark"}
+              aria-pressed={to_string(@gate?)}
+            >
+              G
+            </button>
+            <span
+              class={[
+                "inline-flex size-2.5 shrink-0 rounded-full ring-1",
+                @status_circle == :white && "bg-white ring-zinc-400 dark:bg-zinc-100 dark:ring-zinc-500",
+                @status_circle == :orange && "bg-orange-500 ring-orange-600",
+                @status_circle == :green && "bg-emerald-500 ring-emerald-600"
+              ]}
+              title={status_circle_title(@status_circle)}
+              aria-label={status_circle_title(@status_circle)}
+            >
+            </span>
+          </div>
         </div>
 
-        <%# step rows as a compact table %>
+        <%= if @expected_in do %>
+          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 border-b border-zinc-100 px-2.5 py-1.5 text-[11px] dark:border-zinc-700">
+            <span class="text-zinc-500 dark:text-zinc-400">In</span>
+            <span class="tabular-nums text-right font-medium text-zinc-800 dark:text-zinc-100">
+              <%= cond do %>
+                <% @expected_in && @ship_marks != [] -> %>
+                  <%= @expected_in %>/wk · <%= Enum.join(@ship_marks, "+") %>
+                <% @expected_in -> %>
+                  <%= @expected_in %>/wk
+                <% true -> %>
+                  —
+              <% end %>
+            </span>
+            <span class="text-zinc-500 dark:text-zinc-400">Need</span>
+            <span class="tabular-nums text-right"><%= if @need_wk, do: "#{format_rate(@need_wk)}/wk", else: "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Gap</span>
+            <span class={[
+              "tabular-nums text-right font-semibold",
+              @intake_short? && "text-amber-700 dark:text-amber-300",
+              !@intake_short? && @intake_gap && "text-emerald-700 dark:text-emerald-300"
+            ]}>
+              <%= cond do %>
+                <% is_nil(@intake_gap) -> %>
+                  —
+                <% @intake_short? -> %>
+                  short <%= format_rate(@intake_gap) %>
+                <% @intake_gap < 0 -> %>
+                  +<%= format_rate(abs(@intake_gap)) %>
+                <% true -> %>
+                  ok
+              <% end %>
+            </span>
+          </div>
+        <% end %>
+
         <div class="py-0.5">
-          <%= for step <- @node.steps do %>
-            <div class="group/row grid grid-cols-[1.5rem_minmax(0,1fr)_3.5rem_1.5rem] items-center gap-1.5 px-2.5 py-1.5 text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/30">
-              <span class="inline-flex size-5 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-bold tabular-nums text-zinc-400 dark:border-zinc-500 dark:text-zinc-300">
+          <%= for stat <- @step_stats do %>
+            <% step = stat.step %>
+            <button
+              type="button"
+              phx-click="open_step_edit"
+              phx-value-id={step.id}
+              class="group/row grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-start gap-1.5 px-2.5 py-1.5 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/30"
+            >
+              <span class="mt-0.5 inline-flex size-5 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-bold tabular-nums text-zinc-400 dark:border-zinc-500 dark:text-zinc-300">
                 <%= step.position %>
               </span>
-              <span class="min-w-0 truncate text-zinc-700 dark:text-zinc-200"><%= step.name %></span>
-              <span class="text-right tabular-nums text-zinc-500 dark:text-zinc-300">
-                <%= if step.estimated_minutes, do: "#{step.estimated_minutes}", else: "—" %>
-              </span>
-              <button
-                type="button"
-                phx-click="delete_step"
-                phx-value-id={step.id}
-                class="justify-self-end text-zinc-300 opacity-0 transition-opacity hover:text-red-500 group-hover/row:opacity-100 dark:text-zinc-600"
-                title="Remove"
-              >
-                ×
-              </button>
-            </div>
+              <div class="min-w-0">
+                <div class="truncate font-medium text-zinc-700 dark:text-zinc-200"><%= step.name %></div>
+                <div class="text-[10px] tabular-nums text-zinc-400">
+                  <%= if stat.qty && stat.each do %>
+                    ×<%= stat.qty %> · <%= stat.each %>m ea
+                  <% else %>
+                    —
+                  <% end %>
+                  <%= if stat.people do %>
+                    · <%= stat.people %> ppl
+                  <% end %>
+                  <%= if stat.step.parallel_with_step_id do %>
+                    · ∥ <%= parallel_step_label(@node.steps, stat.step.parallel_with_step_id) %>
+                  <% end %>
+                </div>
+                <%= for item <- Map.get(step, :items) || [] do %>
+                  <div class="text-[10px] text-zinc-400">
+                    <%= if item.kind == :material do %>
+                      burn <%= item.name %><%= if item.qty, do: " · #{format_qty_input(item.qty)}/unit", else: "" %><%= if burn = FlowspecOps.Factories.FactoryNodeStepItem.burn_per_unit_cents(item) do %> · <%= format_money_cents(burn) %>/u<% end %>
+                    <% else %>
+                      asset <%= item.name %><%= if item.qty && item.qty != 1, do: " ×#{item.qty}", else: "" %><%= if item.unit_cost_cents, do: " #{format_money_cents(item.unit_cost_cents)}", else: "" %>
+                    <% end %>
+                  </div>
+                <% end %>
+              </div>
+              <div class="pt-0.5 text-right tabular-nums text-zinc-500 dark:text-zinc-300">
+                <div><%= if stat.content, do: "#{stat.content}m", else: "—" %></div>
+                <%= if stat.stream && stat.people && stat.people > 1 do %>
+                  <div class="text-[10px] text-zinc-400">→<%= stat.stream %>m</div>
+                <% end %>
+              </div>
+            </button>
           <% end %>
 
           <%= if @add_step_node_id == @node.id do %>
@@ -744,7 +1663,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
               <input
                 type="text"
                 name="name"
-                placeholder="Step name"
+                placeholder="Step"
                 autofocus
                 class="min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
               />
@@ -761,25 +1680,850 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
             phx-value-node_id={@node.id}
             class="w-full border-t border-dashed border-zinc-200 px-2.5 py-1 text-left text-[10px] text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-indigo-500 dark:border-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-700/30 dark:hover:text-indigo-400"
           >
-            + add step
+            + step
           </button>
         <% end %>
 
-        <%# footer: touches + est cycle time sum %>
-        <div class="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
-          <span>
-            Touches:
-            <span class="font-semibold tabular-nums"><%= length(@node.steps) %></span>
-            <%= if @node.slots do %>
-              <span class="text-zinc-400 dark:text-zinc-400"> · <%= @node.slots %> slots</span>
-            <% end %>
-          </span>
-          <span class="font-semibold tabular-nums">
-            Est. CT: <%= if @est_total > 0, do: "#{@est_total}m", else: "—" %>
-          </span>
+                <div class="border-t border-zinc-200 bg-zinc-50 px-2.5 py-2 dark:border-zinc-600 dark:bg-zinc-700/80">
+          <div class="mb-1.5 flex items-center justify-between">
+            <span class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+              Abacus
+            </span>
+            <button
+              type="button"
+              phx-click="open_station_edit"
+              phx-value-id={@node.id}
+              class="text-[10px] font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+            >
+              Edit
+            </button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] tabular-nums text-zinc-700 dark:text-zinc-100 sm:grid-cols-3">
+            <div title="Deliverable time: max within parallel steps, sum across serial phases">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Ea</div>
+              <div class="font-semibold"><%= @ea_label %></div>
+              <%= if @ea_phased > 0 and @ea_label != @ea_phased_label do %>
+                <div class="text-[10px] text-zinc-400">if all serial <%= @ea_phased_label %></div>
+              <% end %>
+            </div>
+
+            <div title="Designed people = sum of phase crews (∥ steps add inside a phase)">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Crew</div>
+              <div class="font-semibold">
+                <%= @peak_people || "—" %><%= if @peak_people, do: " ppl", else: "" %>
+              </div>
+              <%= if @peak_phase && @peak_people && @peak_phase < @peak_people do %>
+                <div class="text-[10px] text-zinc-400">busiest phase <%= @peak_phase %></div>
+              <% end %>
+            </div>
+
+            <div title="Bay slots / concurrent deliverables">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Slots</div>
+              <div class="font-semibold"><%= @node.slots || "—" %></div>
+            </div>
+
+            <div title="Assets to spin up this station (one-time)">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Stand-up</div>
+              <div class="font-semibold">
+                <%= if @stand_up_cents, do: format_money_cents(@stand_up_cents), else: "—" %>
+              </div>
+            </div>
+
+            <div title="Consumables per station deliverable">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Burn / unit</div>
+              <div class="font-semibold">
+                <%= if @burn_unit_cents, do: "#{format_money_cents(@burn_unit_cents)}/u", else: "—" %>
+              </div>
+            </div>
+
+            <div class="flex items-end justify-end">
+              <button
+                type="button"
+                phx-click="delete_node"
+                phx-value-id={@node.id}
+                data-confirm={"Remove #{@node.name}? This cannot be undone."}
+                class="text-zinc-400 hover:text-red-500"
+                title="Remove station"
+              >
+                ×
+              </button>
+            </div>
+          </div>
         </div>
+
       </div>
     </div>
+    """
+  end
+
+
+  # Returns {ea_with_parallel_groups, ea_fully_serial, peak_concurrent_people}
+  defp step_timing_summary(steps, step_stats) do
+    stats_by_id = Map.new(step_stats, fn s -> {s.step.id, s} end)
+
+    # Union-find style groups via parallel_with (undirected for manning/time)
+    parent = Map.new(steps, fn s -> {s.id, s.id} end)
+
+    parent =
+      Enum.reduce(steps, parent, fn s, acc ->
+        case s.parallel_with_step_id do
+          nil -> acc
+          other_id -> union_ids(acc, s.id, other_id)
+        end
+      end)
+
+    groups =
+      steps
+      |> Enum.group_by(fn s -> find_root(parent, s.id) end)
+      |> Map.values()
+
+    group_streams =
+      Enum.map(groups, fn group_steps ->
+        streams =
+          group_steps
+          |> Enum.map(fn s -> stats_by_id[s.id] && stats_by_id[s.id].stream end)
+          |> Enum.reject(&is_nil/1)
+
+        people =
+          group_steps
+          |> Enum.map(fn s -> stats_by_id[s.id] && stats_by_id[s.id].people end)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.sum()
+
+        stream =
+          case streams do
+            [] -> nil
+            list -> Enum.max(list)
+          end
+
+        %{stream: stream, people: people}
+      end)
+
+    ea_par =
+      group_streams
+      |> Enum.map(& &1.stream)
+      |> Enum.reject(&is_nil/1)
+      |> case do
+        [] -> 0
+        list -> Enum.sum(list)
+      end
+
+    ea_phase =
+      step_stats
+      |> Enum.map(& &1.stream)
+      |> Enum.reject(&is_nil/1)
+      |> case do
+        [] -> 0
+        list -> Enum.sum(list)
+      end
+
+    # Peak concurrent: max people in any parallel group is wrong for serial phases.
+    # For planning PDF demand at station when all methods could be staffed as designed,
+    # sum people across groups only if groups run at different times — peak is max of
+    # single-group people for true phases, but multi-crew station often has all roles present.
+    # Real Flooring: lay, screw, cut+vac may be sequential phases → peak = max group people.
+    # User also wants 2+2 on cut/vac = 4 in that phase; overall crew often sum of peaks if multi-phase same shift.
+    # Use sum of per-group peak people as "designed crew if phases don't overlap staff"
+    # AND max group as "single-phase peak". Abacus shows sum (designed headcount on card).
+    phase_people =
+      group_streams
+      |> Enum.map(& &1.people)
+      |> Enum.reject(&(&1 == 0))
+
+    crew =
+      case phase_people do
+        [] -> nil
+        list -> Enum.sum(list)
+      end
+
+    peak_phase =
+      case phase_people do
+        [] -> nil
+        list -> Enum.max(list)
+      end
+
+    {ea_par, ea_phase, crew, peak_phase}
+  end
+
+  defp find_root(parent, id) do
+    case Map.get(parent, id, id) do
+      ^id -> id
+      other -> find_root(parent, other)
+    end
+  end
+
+  defp union_ids(parent, a, b) do
+    ra = find_root(parent, a)
+    rb = find_root(parent, b)
+    if ra == rb, do: parent, else: Map.put(parent, ra, rb)
+  end
+
+  # Phase 1: white unless we clearly lack a basis to show the chrome is alive.
+  # Orange/green bottleneck math arrives in Phase 3 — do not fake green.
+  defp work_cell_status_circle(steps, est_total) do
+    cond do
+      steps == [] -> :white
+      est_total <= 0 -> :white
+      true -> :white
+    end
+  end
+
+  defp status_circle_title(:white), do: "Need data"
+  defp status_circle_title(:orange), do: "Bottleneck"
+  defp status_circle_title(:green), do: "No blocks"
+  defp status_circle_title(_), do: "Need data"
+
+  defp format_duration_minutes(m) when is_integer(m) and m > 0 do
+    hours = div(m, 60)
+    mins = rem(m, 60)
+
+    cond do
+      hours > 0 and mins > 0 -> "#{hours}h #{mins}m"
+      hours > 0 -> "#{hours}h"
+      true -> "#{mins}m"
+    end
+  end
+
+  defp format_duration_minutes(_), do: "—"
+
+  defp parallel_step_label(steps, id) do
+    case Enum.find(steps, &(&1.id == id)) do
+      nil -> "step"
+      s -> s.name
+    end
+  end
+
+
+
+
+  defp parse_money_to_cents(nil), do: nil
+  defp parse_money_to_cents(""), do: nil
+
+  defp parse_money_to_cents(s) when is_binary(s) do
+    cleaned =
+      s
+      |> String.trim()
+      |> String.replace("$", "")
+      |> String.replace(",", "")
+
+    cond do
+      cleaned == "" ->
+        nil
+
+      String.contains?(cleaned, ".") ->
+        case Float.parse(cleaned) do
+          {f, _} -> round(f * 100)
+          :error -> nil
+        end
+
+      true ->
+        case Integer.parse(cleaned) do
+          {i, _} -> i * 100
+          :error -> nil
+        end
+    end
+  end
+
+  defp format_money_cents(nil), do: "—"
+
+  defp format_money_cents(cents) when is_integer(cents) do
+    dollars = div(cents, 100)
+    rem_c = rem(abs(cents), 100)
+    sign = if cents < 0, do: "-", else: ""
+
+    if rem_c == 0 do
+      "#{sign}$#{dollars}"
+    else
+      "#{sign}$#{dollars}.#{String.pad_leading(Integer.to_string(rem_c), 2, "0")}"
+    end
+  end
+
+  defp format_money_input(cents) when is_integer(cents) do
+    dollars = div(cents, 100)
+    rem_c = rem(abs(cents), 100)
+
+    if rem_c == 0 do
+      Integer.to_string(dollars)
+    else
+      "#{dollars}.#{String.pad_leading(Integer.to_string(rem_c), 2, "0")}"
+    end
+  end
+
+  defp items_total_cents(items) when is_list(items) do
+    totals =
+      items
+      |> Enum.map(&FlowspecOps.Factories.FactoryNodeStepItem.line_total_cents/1)
+      |> Enum.reject(&is_nil/1)
+
+    case totals do
+      [] -> nil
+      list -> Enum.sum(list)
+    end
+  end
+
+  defp checkbox_true?(params, key) do
+    case Map.get(params, key) do
+      v when v in [true, "true", "on", "1", 1] -> true
+      _ -> false
+    end
+  end
+
+  defp blank_to_nil(nil), do: nil
+  defp blank_to_nil(s) when is_binary(s) do
+    case String.trim(s) do
+      "" -> nil
+      other -> other
+    end
+  end
+
+  defp find_step(factory, step_id) do
+    factory.nodes
+    |> Enum.flat_map(fn n -> Enum.map(n.steps, &{n, &1}) end)
+    |> Enum.find(fn {_n, s} -> s.id == step_id end)
+  end
+
+  defp step_edit_modal(assigns) do
+    found = find_step(assigns.factory, assigns.step_edit_id)
+
+    assigns =
+      case found do
+        {node, step} ->
+          items = Map.get(step, :items) || []
+          equip = Enum.filter(items, &(&1.kind == :equipment))
+          mats = Enum.filter(items, &(&1.kind == :material))
+          siblings = Enum.reject(node.steps, &(&1.id == step.id))
+
+          qty = step.qty_per_unit
+          each = step.minutes_each
+          people = step.people
+
+          content =
+            cond do
+              is_integer(qty) and is_integer(each) -> qty * each
+              is_integer(step.estimated_minutes) -> step.estimated_minutes
+              true -> nil
+            end
+
+          wall =
+            cond do
+              is_integer(content) and is_integer(people) and people > 0 ->
+                ceil(content / people)
+
+              is_integer(content) ->
+                content
+
+              true ->
+                nil
+            end
+
+          assign(assigns,
+            node: node,
+            step: step,
+            sibling_steps: siblings,
+            equip_items: equip,
+            material_items: mats,
+            stand_up_total_cents: sum_cents(equip, :stand_up),
+            burn_total_cents: sum_cents(mats, :burn),
+            work_content_min: content,
+            work_wall_min: wall
+          )
+
+        nil ->
+          assign(assigns,
+            node: nil,
+            step: nil,
+            sibling_steps: [],
+            equip_items: [],
+            material_items: [],
+            stand_up_total_cents: nil,
+            burn_total_cents: nil,
+            work_content_min: nil,
+            work_wall_min: nil
+          )
+      end
+
+    ~H"""
+    <%= if @step do %>
+      <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-zinc-900/40" phx-click="cancel_step_edit"></div>
+        <div class="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+          <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Step · <%= @node.name %></h3>
+
+          <form id={"save-step-#{@step.id}"} phx-change="save_step" phx-submit="save_step" class="mt-3 space-y-3">
+            <input type="hidden" name="step_id" value={@step.id} />
+
+            <label class="block">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Step name</span>
+              <input
+                type="text"
+                name="name"
+                value={@step.name}
+                form={"save-step-#{@step.id}"}
+                class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </label>
+
+            <div
+              id={"step-cycle-#{@step.id}"}
+              phx-hook="StepCycleCalc"
+              class="flex flex-wrap items-end gap-x-2 gap-y-2"
+            >
+              <label class="block w-[4.75rem]">
+                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Qty / unit</span>
+                <input
+                  type="number"
+                  name="qty_per_unit"
+                  min="1"
+                  value={@step.qty_per_unit}
+                  data-cycle-qty
+                  form={"save-step-#{@step.id}"}
+                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </label>
+
+              <span class="pb-2 text-sm font-medium text-zinc-500">×</span>
+
+              <label class="block w-[4.75rem]">
+                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Min / ea</span>
+                <input
+                  type="number"
+                  name="minutes_each"
+                  min="1"
+                  value={@step.minutes_each}
+                  data-cycle-each
+                  form={"save-step-#{@step.id}"}
+                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </label>
+
+              <div class="w-[3.5rem] pb-2 text-center">
+                <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Cycle</div>
+                <div
+                  data-cycle-out
+                  class="mt-1 text-sm font-semibold tabular-nums text-zinc-800 dark:text-zinc-100"
+                >
+                  <%= if @work_content_min, do: "#{@work_content_min}m", else: "—" %>
+                </div>
+              </div>
+
+              <label class="block w-[4.25rem]">
+                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">People</span>
+                <input
+                  type="number"
+                  name="people"
+                  min="1"
+                  value={@step.people}
+                  data-cycle-people
+                  form={"save-step-#{@step.id}"}
+                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </label>
+
+              <div class="flex items-end gap-1.5 pb-2 pl-0.5">
+                <span class="text-sm font-medium text-zinc-500">=</span>
+                <div
+                  data-wall-out
+                  class="min-w-[2.5rem] text-sm font-semibold tabular-nums text-zinc-800 dark:text-zinc-100"
+                >
+                  <%= if @work_wall_min, do: "#{@work_wall_min}m", else: "—" %>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <label class="inline-flex items-center gap-2 text-[11px] font-medium text-zinc-700 dark:text-zinc-200">
+                <input
+                  type="checkbox"
+                  name="parallel_enabled"
+                  form={"save-step-#{@step.id}"}
+                  value="true"
+                  checked={!!@step.parallel_with_step_id}
+                  class="rounded border-zinc-400"
+                />
+                Parallel with
+              </label>
+              <select
+                name="parallel_with_step_id"
+                form={"save-step-#{@step.id}"}
+                class="min-w-[10rem] rounded border border-zinc-300 bg-white px-2 py-1 text-[11px] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              >
+                <option value="none">—</option>
+                <%= for s <- @sibling_steps do %>
+                  <option value={s.id} selected={@step.parallel_with_step_id == s.id}>
+                    <%= s.position %>. <%= s.name %>
+                  </option>
+                <% end %>
+              </select>
+            </div>
+          </form>
+
+          <div class="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+            <h4 class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Stand-up · assets</h4>
+            <.item_section
+              items={@equip_items}
+              mode={:stand_up}
+              step_id={@step.id}
+              total_cents={@stand_up_total_cents}
+            />
+          </div>
+
+          <div class="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+            <h4 class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Burn · per unit</h4>
+            <.item_section
+              items={@material_items}
+              mode={:burn}
+              step_id={@step.id}
+              total_cents={@burn_total_cents}
+            />
+          </div>
+
+          <div class="mt-4 flex items-center justify-end gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+            <button
+              type="button"
+              phx-click="delete_step"
+              phx-value-id={@step.id}
+              data-confirm={"Remove step \\"#{@step.name}\\"? This cannot be undone."}
+              class="mr-auto text-xs text-red-600 hover:text-red-500"
+            >
+              Delete step
+            </button>
+            <button
+              type="button"
+              phx-click="cancel_step_edit"
+              class="rounded px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Close
+            </button>
+            <button
+              type="submit"
+              form={"save-step-#{@step.id}"}
+              class="rounded bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900"
+            >
+              Save
+            </button>
+          </div>
+
+        </div>
+      </div>
+    <% end %>
+    """
+  end
+
+  # One section = table + add row inside table + total under both
+  defp item_section(assigns) do
+    ~H"""
+    <div id={"item-section-#{@mode}-#{@step_id}"} phx-hook="TabSubmitLast" class="overflow-hidden rounded border border-zinc-200 dark:border-zinc-600">
+      <table class="w-full table-fixed text-left text-[11px]">
+        <%= if @mode == :burn do %>
+          <colgroup>
+            <col class="w-[40%]" />
+            <col class="w-[12%]" />
+            <col class="w-[12%]" />
+            <col class="w-[14%]" />
+            <col class="w-[14%]" />
+            <col class="w-[8%]" />
+          </colgroup>
+        <% else %>
+          <colgroup>
+            <col class="w-[46%]" />
+            <col class="w-[14%]" />
+            <col class="w-[16%]" />
+            <col class="w-[16%]" />
+            <col class="w-[8%]" />
+          </colgroup>
+        <% end %>
+        <thead class="bg-zinc-50 text-[10px] uppercase tracking-wide text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+          <tr>
+            <th class="px-2 py-1.5 font-semibold">Item</th>
+            <%= if @mode == :burn do %>
+              <th class="px-1 py-1.5 text-right font-semibold" title="Burn qty per station deliverable">/unit</th>
+              <th class="px-1 py-1.5 text-right font-semibold" title="Pieces per pack/box">Pack</th>
+              <th class="px-1 py-1.5 text-right font-semibold" title="Price per pack/box">Box $</th>
+              <th class="px-1 py-1.5 text-right font-semibold">$/unit</th>
+            <% else %>
+              <th class="px-1 py-1.5 text-right font-semibold">Qty</th>
+              <th class="px-1 py-1.5 text-right font-semibold">Unit $</th>
+              <th class="px-1 py-1.5 text-right font-semibold">Line</th>
+            <% end %>
+            <th class="px-1 py-1.5"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-100 dark:divide-zinc-700">
+          <%= if @items == [] do %>
+            <tr>
+              <td colspan={if(@mode == :burn, do: 6, else: 5)} class="px-2 py-2 text-center text-zinc-400">
+                <%= if @mode == :burn, do: "No consumables yet", else: "No assets yet" %>
+              </td>
+            </tr>
+          <% end %>
+
+          <%= for item <- @items do %>
+            <tr class="text-zinc-700 dark:text-zinc-200">
+              <td class="px-1.5 py-1 align-middle">
+                <form phx-change="update_step_item" phx-submit="update_step_item">
+                  <input type="hidden" name="item_id" value={item.id} />
+                  <input
+                    type="text"
+                    name="name"
+                    value={item.name}
+                    class="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-[11px] font-medium hover:border-zinc-300 focus:border-indigo-400 focus:bg-white focus:outline-none dark:focus:bg-zinc-800"
+                  />
+                </form>
+              </td>
+
+              <%= if @mode == :burn do %>
+                <td class="px-1 py-1 align-middle">
+                  <form phx-change="update_step_item" phx-submit="update_step_item">
+                    <input type="hidden" name="item_id" value={item.id} />
+                    <input type="number" name="qty" min="0" step="any" value={format_qty_input(item.qty)}
+                      class="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-right text-[11px] tabular-nums hover:border-zinc-300 focus:border-indigo-400 focus:bg-white focus:outline-none dark:focus:bg-zinc-800" />
+                  </form>
+                </td>
+                <td class="px-1 py-1 align-middle">
+                  <form phx-change="update_step_item" phx-submit="update_step_item">
+                    <input type="hidden" name="item_id" value={item.id} />
+                    <input type="number" name="pack_qty" min="0" step="any" value={format_qty_input(item.pack_qty)} placeholder="—"
+                      class="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-right text-[11px] tabular-nums hover:border-zinc-300 focus:border-indigo-400 focus:bg-white focus:outline-none dark:focus:bg-zinc-800" />
+                  </form>
+                </td>
+                <td class="px-1 py-1 align-middle">
+                  <form phx-change="update_step_item" phx-submit="update_step_item">
+                    <input type="hidden" name="item_id" value={item.id} />
+                    <input type="text" name="unit_cost"
+                      value={if item.unit_cost_cents, do: format_money_input(item.unit_cost_cents), else: ""}
+                      placeholder="—"
+                      class="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-right text-[11px] tabular-nums hover:border-zinc-300 focus:border-indigo-400 focus:bg-white focus:outline-none dark:focus:bg-zinc-800" />
+                  </form>
+                </td>
+                <td class="px-1 py-1 text-right align-middle tabular-nums font-medium">
+                  <%= case FlowspecOps.Factories.FactoryNodeStepItem.burn_per_unit_cents(item) do %>
+                    <% nil -> %>—
+                    <% c -> %><%= format_money_cents(c) %>
+                  <% end %>
+                </td>
+              <% else %>
+                <td class="px-1 py-1 align-middle">
+                  <form phx-change="update_step_item" phx-submit="update_step_item">
+                    <input type="hidden" name="item_id" value={item.id} />
+                    <input type="number" name="qty" min="0" step="any" value={format_qty_input(item.qty)}
+                      class="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-right text-[11px] tabular-nums hover:border-zinc-300 focus:border-indigo-400 focus:bg-white focus:outline-none dark:focus:bg-zinc-800" />
+                  </form>
+                </td>
+                <td class="px-1 py-1 align-middle">
+                  <form phx-change="update_step_item" phx-submit="update_step_item">
+                    <input type="hidden" name="item_id" value={item.id} />
+                    <input type="text" name="unit_cost"
+                      value={if item.unit_cost_cents, do: format_money_input(item.unit_cost_cents), else: ""}
+                      placeholder="—"
+                      class="w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-right text-[11px] tabular-nums hover:border-zinc-300 focus:border-indigo-400 focus:bg-white focus:outline-none dark:focus:bg-zinc-800" />
+                  </form>
+                </td>
+                <td class="px-1 py-1 text-right align-middle tabular-nums font-medium">
+                  <%= case FlowspecOps.Factories.FactoryNodeStepItem.stand_up_cents(item) do %>
+                    <% nil -> %>—
+                    <% c -> %><%= format_money_cents(c) %>
+                  <% end %>
+                </td>
+              <% end %>
+
+              <td class="px-1 py-1 text-right align-middle">
+                <button
+                  type="button"
+                  phx-click="delete_step_item"
+                  phx-value-id={item.id}
+                  data-confirm={"Remove #{item.name}?"}
+                  class="text-zinc-300 hover:text-red-500"
+                >
+                  ×
+                </button>
+              </td>
+            </tr>
+          <% end %>
+
+          <%!-- compact add row: inputs associated via form= (valid HTML) --%>
+          <tr class="bg-zinc-50/80 dark:bg-zinc-800/40">
+              <td class="px-1.5 py-1">
+                <input
+                  type="text"
+                  name="name"
+                  required
+                  form={"add-item-#{@mode}-#{@step_id}"}
+                  placeholder={if @mode == :burn, do: "Consumable", else: "Asset"}
+                  class="w-full rounded border border-zinc-300 bg-white px-1.5 py-1 text-[11px] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </td>
+              <%= if @mode == :burn do %>
+                <td class="px-1 py-1">
+                  <input type="number" name="qty" min="0" step="any" value="1" form={"add-item-#{@mode}-#{@step_id}"}
+                    class="w-full rounded border border-zinc-300 bg-white px-1 py-1 text-right text-[11px] tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                </td>
+                <td class="px-1 py-1">
+                  <input type="number" name="pack_qty" min="0" step="any" placeholder="Pack" form={"add-item-#{@mode}-#{@step_id}"}
+                    class="w-full rounded border border-zinc-300 bg-white px-1 py-1 text-right text-[11px] tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                </td>
+                <td class="px-1 py-1">
+                  <input type="text" name="unit_cost" placeholder="Box $" form={"add-item-#{@mode}-#{@step_id}"}
+                    class="w-full rounded border border-zinc-300 bg-white px-1 py-1 text-right text-[11px] tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                </td>
+                <td class="px-1 py-1 text-right text-zinc-400">—</td>
+              <% else %>
+                <td class="px-1 py-1">
+                  <input type="number" name="qty" min="0" step="any" value="1" form={"add-item-#{@mode}-#{@step_id}"}
+                    class="w-full rounded border border-zinc-300 bg-white px-1 py-1 text-right text-[11px] tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                </td>
+                <td class="px-1 py-1">
+                  <input type="text" name="unit_cost" placeholder="$" form={"add-item-#{@mode}-#{@step_id}"}
+                    class="w-full rounded border border-zinc-300 bg-white px-1 py-1 text-right text-[11px] tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                </td>
+                <td class="px-1 py-1 text-right text-zinc-400">—</td>
+              <% end %>
+              <td class="px-1 py-1 text-right">
+                <button
+                  type="submit"
+                  form={"add-item-#{@mode}-#{@step_id}"}
+                  class="rounded bg-zinc-800 px-1.5 py-1 text-[11px] font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-200 dark:text-zinc-900"
+                >
+                  +
+                </button>
+              </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <form phx-submit="add_step_item" id={"add-item-#{@mode}-#{@step_id}"} class="hidden">
+      <input type="hidden" name="step_id" value={@step_id} />
+      <input type="hidden" name="kind" value={if(@mode == :burn, do: "material", else: "equipment")} />
+    </form>
+
+    <div class="mt-1.5 flex justify-end px-1 text-[11px] font-semibold tabular-nums text-zinc-800 dark:text-zinc-100">
+      <%= if @mode == :burn do %>
+        <span class="text-zinc-400 font-medium mr-2">Total / unit</span>
+        <%= if @total_cents, do: format_money_cents(@total_cents), else: "—" %>
+      <% else %>
+        <span class="text-zinc-400 font-medium mr-2">Total</span>
+        <%= if @total_cents, do: format_money_cents(@total_cents), else: "—" %>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp sum_cents(items, :stand_up) do
+    items
+    |> Enum.map(&FlowspecOps.Factories.FactoryNodeStepItem.stand_up_cents/1)
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> nil
+      list -> Enum.sum(list)
+    end
+  end
+
+  defp sum_cents(items, :burn) do
+    items
+    |> Enum.map(&FlowspecOps.Factories.FactoryNodeStepItem.burn_per_unit_cents/1)
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> nil
+      list -> Enum.sum(list)
+    end
+  end
+
+  defp station_edit_modal(assigns) do
+    node = Enum.find(assigns.factory.nodes, &(&1.id == assigns.station_edit_id))
+    assigns = assign(assigns, node: node)
+
+    ~H"""
+    <%= if @node do %>
+      <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-zinc-900/40" phx-click="cancel_station_edit"></div>
+        <div class="relative w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+          <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Station</h3>
+          <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+            Name, design gates (product / method), bay slots. Steps edited on each row. Gates print on PDF.
+          </p>
+
+          <form phx-submit="save_station" class="mt-3 space-y-3">
+            <input type="hidden" name="node_id" value={@node.id} />
+
+            <label class="block">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Name</span>
+              <input
+                type="text"
+                name="name"
+                value={@node.name}
+                class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </label>
+
+            <div class="space-y-2 rounded border border-zinc-200 bg-zinc-50 px-2.5 py-2 dark:border-zinc-600 dark:bg-zinc-800/40">
+              <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                Design gates · PDF
+              </div>
+              <label class="flex items-start gap-2 text-[12px] text-zinc-800 dark:text-zinc-100">
+                <input
+                  type="checkbox"
+                  name="product_ready"
+                  value="true"
+                  checked={@node.product_ready == true}
+                  class="mt-0.5 rounded border-zinc-400"
+                />
+                <span>
+                  <span class="font-medium">Product ready</span>
+                  <span class="block text-[10px] text-zinc-500 dark:text-zinc-400">
+                    Released drawings / product definition frozen enough to full-kit (not still moving holes).
+                  </span>
+                </span>
+              </label>
+              <label class="flex items-start gap-2 text-[12px] text-zinc-800 dark:text-zinc-100">
+                <input
+                  type="checkbox"
+                  name="method_instruction"
+                  value="true"
+                  checked={@node.method_instruction == true}
+                  class="mt-0.5 rounded border-zinc-400"
+                />
+                <span>
+                  <span class="font-medium">Method instruction</span>
+                  <span class="block text-[10px] text-zinc-500 dark:text-zinc-400">
+                    Standard work / instruction exists and people can run the method.
+                  </span>
+                </span>
+              </label>
+            </div>
+
+            <label class="block">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Slots (bay)</span>
+              <input
+                type="number"
+                name="slots"
+                min="1"
+                value={@node.slots}
+                class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </label>
+
+            <label class="block">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Note</span>
+              <textarea
+                name="note"
+                rows="2"
+                class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              ><%= @node.note %></textarea>
+            </label>
+
+            <div class="flex items-center justify-end gap-2 pt-1">
+              <button type="button" phx-click="cancel_station_edit" class="px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400">
+                Cancel
+              </button>
+              <button type="submit" class="rounded bg-zinc-900 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">
+                Save
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    <% end %>
     """
   end
 
