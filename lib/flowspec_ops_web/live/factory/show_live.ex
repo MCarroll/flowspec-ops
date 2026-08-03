@@ -29,7 +29,8 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
        add_step_name: "",
        commitment_edit_open: false,
        step_edit_id: nil,
-       station_edit_id: nil
+       station_edit_id: nil,
+       transport_edit_id: nil
      )}
   end
 
@@ -398,6 +399,45 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   end
 
   @impl true
+  def handle_event("open_transport_edit", %{"id" => id}, socket) do
+    {:noreply, assign(socket, transport_edit_id: String.to_integer(id), step_edit_id: nil, station_edit_id: nil)}
+  end
+
+  @impl true
+  def handle_event("cancel_transport_edit", _params, socket) do
+    {:noreply, assign(socket, transport_edit_id: nil)}
+  end
+
+  @impl true
+  def handle_event("save_transport", params, socket) do
+    node_id = String.to_integer(params["node_id"])
+    node = Enum.find(socket.assigns.factory.nodes, &(&1.id == node_id))
+
+    if node do
+      attrs = %{
+        name: params |> Map.get("name", node.name) |> String.trim(),
+        vendor_name: blank_to_nil(Map.get(params, "vendor_name")),
+        from_location: blank_to_nil(Map.get(params, "from_location")),
+        to_location: blank_to_nil(Map.get(params, "to_location")),
+        batch_size: parse_optional_positive_int(Map.get(params, "batch_size")),
+        ship_weekday: blank_to_nil(Map.get(params, "ship_weekday")),
+        transit_days: parse_optional_positive_int(Map.get(params, "transit_days")),
+        note: blank_to_nil(Map.get(params, "note"))
+      }
+
+      case Factories.update_node(node, attrs) do
+        {:ok, _} ->
+          {:noreply, reload_factory(socket) |> assign(transport_edit_id: nil)}
+
+        {:error, _} ->
+          {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_event("open_station_edit", %{"id" => id}, socket) do
     {:noreply, assign(socket, station_edit_id: String.to_integer(id), step_edit_id: nil)}
   end
@@ -508,6 +548,11 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
         :if={@station_edit_id}
         factory={@factory}
         station_edit_id={@station_edit_id}
+      />
+      <.transport_edit_modal
+        :if={@transport_edit_id}
+        factory={@factory}
+        transport_edit_id={@transport_edit_id}
       />
     </div>
     """
@@ -1237,9 +1282,15 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-amber-400 text-[10px] font-bold tabular-nums text-amber-800 dark:border-amber-500 dark:text-amber-200">
             <%= @sequence || @node.position %>
           </span>
-          <h4 class="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
+          <button
+            type="button"
+            phx-click="open_transport_edit"
+            phx-value-id={@node.id}
+            class="min-w-0 flex-1 truncate text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-900 hover:text-indigo-600 dark:text-zinc-100 dark:hover:text-indigo-300"
+            title="Edit transport"
+          >
             <%= @node.name %>
-          </h4>
+          </button>
         </div>
 
         <div class="py-0.5">
@@ -1805,27 +1856,27 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
             </div>
           </div>
 
-          <div class="mb-2 flex items-end gap-2 border-t border-zinc-200/80 pt-2 tabular-nums text-zinc-700 dark:border-zinc-600 dark:text-zinc-100">
-            <div class="min-w-0 flex-1" title="Units/day at cycle with standard productive day (360m)">
+          <div class="relative mb-2 grid grid-cols-5 gap-x-2 border-t border-zinc-200/80 pt-2 tabular-nums text-zinc-700 dark:border-zinc-600 dark:text-zinc-100">
+            <div class="min-w-0" title="Units/day at cycle with standard productive day (360m)">
               <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">D</div>
               <div class="text-sm font-semibold"><%= format_dwm(@rate_d) %></div>
             </div>
-            <div class="min-w-0 flex-1" title="Units/week = D × 5">
+            <div class="min-w-0" title="Units/week = D × 5">
               <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">W</div>
               <div class="text-sm font-semibold"><%= format_dwm(@rate_w) %></div>
             </div>
-            <div class="min-w-0 flex-1" title="Units/month = D × 20">
+            <div class="relative min-w-0" title="Units/month = D × 20">
               <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">M</div>
               <div class="text-sm font-semibold"><%= format_dwm(@rate_m) %></div>
+              <span class="pointer-events-none absolute -right-1 top-1/2 -translate-y-1/2 text-[10px] font-medium text-zinc-400" aria-hidden="true">::</span>
             </div>
-            <div class="shrink-0 pb-1 text-[10px] font-medium text-zinc-400" aria-hidden="true">::</div>
-            <div class="min-w-0 flex-1" title="Factory promise need (units/week)">
+            <div class="min-w-0" title="Factory promise need (units/week)">
               <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">N/wk</div>
               <div class="text-sm font-semibold">
                 <%= if @need_wk, do: format_rate(@need_wk), else: "—" %>
               </div>
             </div>
-            <div class="min-w-0 flex-1 text-right" title="Gap = Need/wk − station W (short if positive)">
+            <div class="min-w-0" title="Gap = Need/wk − station W">
               <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">G</div>
               <div class={[
                 "text-sm",
@@ -1847,47 +1898,45 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
             </div>
           </div>
 
-          <div class="grid grid-cols-4 gap-x-2 gap-y-2 border-t border-zinc-200/80 pt-2 text-[11px] tabular-nums text-zinc-700 dark:border-zinc-600 dark:text-zinc-100">
-            <div title="Designed people = sum of phase crews (∥ steps add inside a phase)">
+          <div class="relative grid grid-cols-4 gap-x-2 border-t border-zinc-200/80 pt-2 text-[11px] tabular-nums text-zinc-700 dark:border-zinc-600 dark:text-zinc-100">
+            <div class="min-w-0" title="Designed people = sum of phase crews (∥ steps add inside a phase)">
               <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Crew</div>
               <div class="font-semibold">
                 <%= @peak_people || "—" %><%= if @peak_people, do: " ppl", else: "" %>
               </div>
             </div>
 
-            <div title="Assets to spin up this station (one-time)">
+            <div class="min-w-0" title="Assets to spin up this station (one-time)">
               <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Stand-up</div>
               <div class="font-semibold">
                 <%= if @stand_up_cents, do: format_money_cents(@stand_up_cents), else: "—" %>
               </div>
             </div>
 
-            <div title="Consumables per unit">
+            <div class="min-w-0" title="Consumables per unit">
               <div class="truncate text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Burn/u</div>
               <div class="font-semibold">
                 <%= if @burn_unit_cents, do: format_money_cents(@burn_unit_cents), else: "—" %>
               </div>
             </div>
 
-            <div title="Consumables per process batch (burn/u × batch)">
+            <div class="min-w-0" title="Consumables per process batch (burn/u × batch)">
               <div class="truncate text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Burn/b</div>
               <div class="font-semibold">
                 <%= if @burn_batch_cents, do: format_money_cents(@burn_batch_cents), else: "—" %>
               </div>
             </div>
 
-            <div class="col-span-4 flex items-end justify-end">
-              <button
-                type="button"
-                phx-click="delete_node"
-                phx-value-id={@node.id}
-                data-confirm={"Remove #{@node.name}? This cannot be undone."}
-                class="text-zinc-400 hover:text-red-500"
-                title="Remove station"
-              >
-                ×
-              </button>
-            </div>
+            <button
+              type="button"
+              phx-click="delete_node"
+              phx-value-id={@node.id}
+              data-confirm={"Remove #{@node.name}? This cannot be undone."}
+              class="absolute bottom-0 right-0 text-zinc-400 hover:text-red-500"
+              title="Remove station"
+            >
+              ×
+            </button>
           </div>
         </div>
 
@@ -2633,6 +2682,120 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       [] -> nil
       list -> Enum.sum(list)
     end
+  end
+
+  defp transport_edit_modal(assigns) do
+    node = Enum.find(assigns.factory.nodes, &(&1.id == assigns.transport_edit_id))
+    assigns = assign(assigns, :node, node)
+
+    ~H"""
+    <%= if @node do %>
+      <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-zinc-900/40" phx-click="cancel_transport_edit"></div>
+        <div class="relative w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+          <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Transport · <%= @node.name %></h3>
+          <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">Route and schedule details.</p>
+
+          <form phx-submit="save_transport" class="mt-3 space-y-3">
+            <input type="hidden" name="node_id" value={@node.id} />
+
+            <label class="block">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Name</span>
+              <input
+                type="text"
+                name="name"
+                value={@node.name}
+                class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </label>
+
+            <label class="block">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Vendor / carrier</span>
+              <input
+                type="text"
+                name="vendor_name"
+                value={@node.vendor_name}
+                class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </label>
+
+            <div class="flex gap-2">
+              <label class="block flex-1">
+                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">From</span>
+                <input
+                  type="text"
+                  name="from_location"
+                  value={@node.from_location}
+                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </label>
+              <label class="block flex-1">
+                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">To</span>
+                <input
+                  type="text"
+                  name="to_location"
+                  value={@node.to_location}
+                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </label>
+            </div>
+
+            <div class="flex gap-2">
+              <label class="block flex-1">
+                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Batch size</span>
+                <input
+                  type="number"
+                  name="batch_size"
+                  min="1"
+                  value={@node.batch_size}
+                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </label>
+              <label class="block flex-1">
+                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Transit days</span>
+                <input
+                  type="number"
+                  name="transit_days"
+                  min="1"
+                  value={@node.transit_days}
+                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </label>
+            </div>
+
+            <label class="block">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Ship weekday</span>
+              <input
+                type="text"
+                name="ship_weekday"
+                value={@node.ship_weekday}
+                placeholder="thursday"
+                class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </label>
+
+            <label class="block">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Note</span>
+              <textarea
+                name="note"
+                rows="2"
+                class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              ><%= @node.note %></textarea>
+            </label>
+
+            <div class="flex items-center justify-end gap-2 pt-1">
+              <button type="button" phx-click="cancel_transport_edit" class="px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400">
+                Cancel
+              </button>
+              <button type="submit" class="rounded bg-zinc-900 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">
+                Save
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    <% end %>
+    """
   end
 
   defp station_edit_modal(assigns) do
