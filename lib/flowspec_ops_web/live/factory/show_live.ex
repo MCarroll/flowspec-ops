@@ -47,8 +47,6 @@ versions: Factories.list_versions(factory.id),
 
   @impl true
   def handle_event("toggle_card_menu", %{"id" => id}, socket) do
-    id = String.to_integer(id)
-
     next =
       if socket.assigns.card_menu_id == id do
         nil
@@ -1172,11 +1170,13 @@ defp versions_panel(assigns) do
           <%= case item do %>
             <% {:group, name, members} -> %>
               <.storage_group_card
+                factory={@factory}
                 name={name}
                 members={members}
                 sequence={seq}
                 links={@links}
                 line_nodes={@sorted_nodes}
+                card_menu_id={@card_menu_id}
               />
             <% {:node, node} -> %>
               <.node_card
@@ -1358,7 +1358,13 @@ defp versions_panel(assigns) do
 
   defp node_card(%{node: %{kind: :queue}} = assigns) do
     ~H"""
-    <.queue_card node={@node} sequence={@sequence} />
+    <.queue_card
+      factory={@factory}
+      node={@node}
+      sequence={@sequence}
+      links={@links}
+      card_menu_id={@card_menu_id}
+    />
     """
   end
 
@@ -1624,17 +1630,31 @@ defp node_card(assigns) do
         true -> nil
       end
 
+    factory = assigns[:factory]
+    menu_id = "g-#{assigns.name}"
+    menu_open? = assigns[:card_menu_id] == menu_id
+
+    pencil_href =
+      if factory do
+        ~p"/factory/projects/#{factory.id}/storage-groups/#{assigns.name}/pencil?seq=#{assigns.sequence}"
+      else
+        "#"
+      end
+
     assigns =
       assigns
       |> assign(:total, total)
       |> assign(:members, members)
       |> assign(:steps, steps)
       |> assign(:pass_mark, pass_mark)
+      |> assign(:menu_id, menu_id)
+      |> assign(:menu_open?, menu_open?)
+      |> assign(:pencil_href, pencil_href)
 
     ~H"""
     <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-600 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
-        <div class="flex items-center gap-2 border-b border-sky-400/80 bg-sky-950 px-2.5 py-1.5 text-sky-50 dark:border-sky-600 dark:bg-sky-950">
+        <div class="relative flex items-center gap-2 border-b border-sky-400/80 bg-sky-950 px-2.5 py-1.5 text-sky-50 dark:border-sky-600 dark:bg-sky-950">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sky-300 text-[10px] font-bold tabular-nums text-sky-100">
             <%= @sequence %>
           </span>
@@ -1644,6 +1664,36 @@ defp node_card(assigns) do
           <span class="ml-auto shrink-0 tabular-nums text-[10px] font-semibold text-sky-100">
             <%= @total %>
           </span>
+          <div class="relative shrink-0">
+            <button
+              type="button"
+              phx-click="toggle_card_menu"
+              phx-value-id={@menu_id}
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-sky-200 hover:bg-sky-900 hover:text-white"
+              title="Card menu"
+              aria-label="Card menu"
+              aria-expanded={to_string(@menu_open?)}
+            >
+              <span class="text-[14px] leading-none tracking-tighter" aria-hidden="true">⋮</span>
+            </button>
+            <%= if @menu_open? do %>
+              <div
+                class="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800"
+                role="menu"
+              >
+                <a
+                  href={@pencil_href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="block px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                  role="menuitem"
+                  phx-click="close_card_menu"
+                >
+                  Print pencil sheet
+                </a>
+              </div>
+            <% end %>
+          </div>
         </div>
 
         <div class="divide-y divide-zinc-700/80 bg-zinc-900 text-zinc-100">
@@ -1715,24 +1765,71 @@ defp node_card(assigns) do
         _ -> "Queue"
       end
 
-    assigns = assign(assigns, role_label: role_label)
+    factory = assigns[:factory]
+    menu_open? = assigns[:card_menu_id] == "n-#{assigns.node.id}"
+
+    pencil_href =
+      if factory do
+        ~p"/factory/projects/#{factory.id}/nodes/#{assigns.node.id}/pencil?seq=#{assigns.sequence || assigns.node.position}"
+      else
+        "#"
+      end
+
+    assigns =
+      assigns
+      |> assign(:role_label, role_label)
+      |> assign(:menu_open?, menu_open?)
+      |> assign(:pencil_href, pencil_href)
 
     ~H"""
     <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
-        <div class="flex items-center gap-2 border-b border-sky-300 bg-sky-100 px-2.5 py-1.5 dark:border-sky-700 dark:bg-sky-900/30">
+        <div class="relative flex items-center gap-2 border-b border-sky-300 bg-sky-100 px-2.5 py-1.5 dark:border-sky-700 dark:bg-sky-900/30">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sky-400 text-[10px] font-bold tabular-nums text-sky-800 dark:border-sky-500 dark:text-sky-200">
             <%= @sequence || @node.position %>
           </span>
-          <h4 class="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
+          <h4 class="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
             <%= @node.name %>
           </h4>
+          <div class="relative shrink-0">
+            <button
+              type="button"
+              phx-click="toggle_card_menu"
+              phx-value-id={"n-#{@node.id}"}
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-sky-700 hover:bg-sky-200 hover:text-sky-950 dark:text-sky-200 dark:hover:bg-sky-800"
+              title="Card menu"
+              aria-label="Card menu"
+              aria-expanded={to_string(@menu_open?)}
+            >
+              <span class="text-[14px] leading-none tracking-tighter" aria-hidden="true">⋮</span>
+            </button>
+            <%= if @menu_open? do %>
+              <div
+                class="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800"
+                role="menu"
+              >
+                <a
+                  href={@pencil_href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="block px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                  role="menuitem"
+                  phx-click="close_card_menu"
+                >
+                  Print pencil sheet
+                </a>
+              </div>
+            <% end %>
+          </div>
         </div>
         <div class="space-y-1 px-2.5 py-1.5 text-[11px] text-zinc-600 dark:text-zinc-300">
           <div class="tabular-nums">
             <%= @role_label %>
             <%= if @node.slots do %>
               · <%= @node.slots %> slots
+            <% end %>
+            <%= if @node.bypass_allowed do %>
+              · bypass
             <% end %>
           </div>
           <%= if @node.note do %>
@@ -1811,7 +1908,7 @@ links = assigns[:links] || []
     avail_label = inbound_avail_label(assigns.node, links)
     crew = crew_designed
     gate? = Map.get(assigns.node, :gate) == true
-    menu_open? = assigns[:card_menu_id] == assigns.node.id
+    menu_open? = assigns[:card_menu_id] == "n-#{assigns.node.id}"
 
     gap =
       if is_number(expected_in) and is_float(need_wk) do
@@ -1958,7 +2055,7 @@ links = assigns[:links] || []
               <button
                 type="button"
                 phx-click="toggle_card_menu"
-                phx-value-id={@node.id}
+                phx-value-id={"n-#{@node.id}"}
                 class="inline-flex h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-50"
                 title="Card menu"
                 aria-label="Card menu"

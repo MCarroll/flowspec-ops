@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= @page_title %></title>
+    <style>
+      <%= raw(FlowspecOpsWeb.PencilHTML.print_css()) %>
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <div class="hint">Pencil sheet · browser Print → paper or PDF</div>
+      <div style="display:flex;gap:0.4rem;">
+        <button type="button" onclick="window.print()">Print…</button>
+        <a href={~p"/factory/projects/#{@factory.id}"}>Back to net</a>
+      </div>
+    </div>
+
+    <main class="sheet">
+      <h1><%= @node.name %></h1>
+      <div class="meta">
+        <div>
+          <div class="k">Factory</div>
+          <div class="v"><%= @factory.name %></div>
+        </div>
+        <div>
+          <div class="k">Line</div>
+          <div class="v"><%= if @line, do: @line.name, else: "—" %></div>
+        </div>
+        <div>
+          <div class="k">Sequence</div>
+          <div class="v">#<%= @seq %></div>
+        </div>
+        <div>
+          <div class="k">Version</div>
+          <div class="v"><%= version_label(@latest_version) %></div>
+        </div>
+        <div>
+          <div class="k">Printed</div>
+          <div class="v"><%= format_printed_at(@printed_at) %></div>
+        </div>
+        <div>
+          <div class="k">Kind</div>
+          <div class="v"><%= @role_label %></div>
+        </div>
+      </div>
+
+      <h2>Hold / feed</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th class="num">Slots</th>
+            <th>Storage group</th>
+            <th>Location</th>
+            <th>Bypass</th>
+            <th>Gate</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><%= @role_label %></td>
+            <td class="num"><%= dash_or(@node.slots) %></td>
+            <td><%= dash_or(@node.storage_group) %></td>
+            <td><%= dash_or(@node.location_note) %></td>
+            <td><%= yes_dash(@node.bypass_allowed == true) %></td>
+            <td><%= yes_dash(@node.gate == true) %></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+
+      <h2>Links (in / out)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Dir</th>
+            <th>Node</th>
+            <th>Kind</th>
+            <th>Label</th>
+            <th>Pencil</th>
+          </tr>
+        </thead>
+        <tbody>
+          <%= for row <- @link_rows do %>
+            <tr>
+              <td><%= row.dir %></td>
+              <td><%= row.name %></td>
+              <td><%= row.kind %></td>
+              <td><%= dash_or(row.label) %></td>
+              <td class="blank"></td>
+            </tr>
+          <% end %>
+          <tr>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+
+      <%= if @node.note && String.trim(@node.note) != "" do %>
+        <h2>Card note</h2>
+        <p style="font-size:9.5pt;margin:0.2rem 0 0.4rem;"><%= @node.note %></p>
+      <% end %>
+
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+    </main>
+  </body>
+</html>

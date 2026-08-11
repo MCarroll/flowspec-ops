@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= @page_title %></title>
+    <style>
+      <%= raw(FlowspecOpsWeb.PencilHTML.print_css()) %>
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <div class="hint">Pencil sheet · browser Print → paper or PDF</div>
+      <div style="display:flex;gap:0.4rem;">
+        <button type="button" onclick="window.print()">Print…</button>
+        <a href={~p"/factory/projects/#{@factory.id}"}>Back to net</a>
+      </div>
+    </div>
+
+    <main class="sheet">
+      <h1><%= @group_name %> LOT</h1>
+      <div class="meta">
+        <div>
+          <div class="k">Factory</div>
+          <div class="v"><%= @factory.name %></div>
+        </div>
+        <div>
+          <div class="k">Line</div>
+          <div class="v"><%= if @line, do: @line.name, else: "—" %></div>
+        </div>
+        <div>
+          <div class="k">Sequence</div>
+          <div class="v">#<%= @seq %></div>
+        </div>
+        <div>
+          <div class="k">Version</div>
+          <div class="v"><%= version_label(@latest_version) %></div>
+        </div>
+        <div>
+          <div class="k">Printed</div>
+          <div class="v"><%= format_printed_at(@printed_at) %></div>
+        </div>
+        <div>
+          <div class="k">Σ slots</div>
+          <div class="v"><%= @total_slots %></div>
+        </div>
+      </div>
+
+      <h2>Passthrough / bypass</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Path</th>
+            <th>Target</th>
+            <th class="num">Target slots</th>
+            <th>Pencil</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Passthrough</td>
+            <td><%= dash_or(@passthrough_name) %></td>
+            <td class="num"><%= dash_or(@passthrough_slots) %></td>
+            <td class="blank"></td>
+          </tr>
+          <tr>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+
+      <h2>Lots (members)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Lot</th>
+            <th class="num">Slots</th>
+            <th>Location</th>
+            <th>Bypass</th>
+            <th>Role</th>
+            <th>Pencil</th>
+          </tr>
+        </thead>
+        <tbody>
+          <%= for m <- @members do %>
+            <tr>
+              <td><%= m.name %></td>
+              <td class="num"><%= dash_or(m.slots) %></td>
+              <td><%= dash_or(m.location_note) %></td>
+              <td><%= yes_dash(m.bypass_allowed == true) %></td>
+              <td><%= queue_role_label(m.queue_role) %></td>
+              <td class="blank"></td>
+            </tr>
+          <% end %>
+          <tr>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+
+      <h2>Group steps</h2>
+      <table>
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th>Step</th>
+            <th class="num">Min</th>
+            <th class="num">Ppl</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <%= for step <- @steps do %>
+            <tr>
+              <td class="num"><%= step.position %></td>
+              <td><%= step.name %></td>
+              <td class="num"><%= dash_or(step.estimated_minutes) %></td>
+              <td class="num"><%= dash_or(step.people) %></td>
+              <td class="blank"></td>
+            </tr>
+          <% end %>
+          <tr>
+            <td class="num blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+    </main>
+  </body>
+</html>
