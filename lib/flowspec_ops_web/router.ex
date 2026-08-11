@@ -18,8 +18,9 @@ defmodule FlowspecOpsWeb.Router do
     pipe_through :browser
     live "/", ClientsLive, :index
     live "/clients", ClientsLive, :index
-    live "/factory/projects", Factory.ProjectsLive, :index
+live "/factory/projects", Factory.ProjectsLive, :index
     live "/factory/projects/:id", Factory.ShowLive, :show
+    get "/factory/projects/:factory_id/nodes/:node_id/pencil", PencilController, :show
     live "/factory/templates", Factory.TemplatesLive, :index
     live "/factory/part-specs", Factory.PartSpecsLive, :index
   end

@@ -1,8 +1,9 @@
 defmodule FlowspecOpsWeb.Factory.ShowLive do
   use FlowspecOpsWeb, :live_view
 
-  alias FlowspecOps.Factories
+alias FlowspecOps.Factories
   alias FlowspecOps.Factories.FactoryNodeStep
+  alias FlowspecOps.Factories.StationMath
 
   @tabs [
     {"Project Net", "net"},
@@ -11,7 +12,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   ]
 
   @impl true
-  def mount(%{"id" => id}, _session, socket) do
+def mount(%{"id" => id}, _session, socket) do
     factory = Factories.get_factory!(id)
 
     {:ok,
@@ -30,13 +31,37 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
        commitment_edit_open: false,
        step_edit_id: nil,
        station_edit_id: nil,
-       transport_edit_id: nil
+       transport_edit_id: nil,
+versions: Factories.list_versions(factory.id),
+       versions_open: false,
+       save_version_open: false,
+       restore_confirm_id: nil,
+       card_menu_id: nil
      )}
   end
 
-  @impl true
+@impl true
   def handle_event("select_tab", %{"tab" => tab}, socket) do
-    {:noreply, assign(socket, selected_tab: tab)}
+    {:noreply, assign(socket, selected_tab: tab, card_menu_id: nil)}
+  end
+
+  @impl true
+  def handle_event("toggle_card_menu", %{"id" => id}, socket) do
+    id = String.to_integer(id)
+
+    next =
+      if socket.assigns.card_menu_id == id do
+        nil
+      else
+        id
+      end
+
+    {:noreply, assign(socket, card_menu_id: next)}
+  end
+
+  @impl true
+  def handle_event("close_card_menu", _params, socket) do
+    {:noreply, assign(socket, card_menu_id: nil)}
   end
 
   @impl true
@@ -45,8 +70,94 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   end
 
   @impl true
-  def handle_event("cancel_commitment_edit", _params, socket) do
+def handle_event("cancel_commitment_edit", _params, socket) do
     {:noreply, assign(socket, commitment_edit_open: false)}
+  end
+
+  @impl true
+  def handle_event("toggle_versions", _params, socket) do
+    {:noreply, assign(socket, versions_open: !socket.assigns.versions_open, save_version_open: false, restore_confirm_id: nil)}
+  end
+
+  @impl true
+  def handle_event("open_save_version", _params, socket) do
+    {:noreply, assign(socket, save_version_open: true, versions_open: true, restore_confirm_id: nil)}
+  end
+
+  @impl true
+  def handle_event("cancel_save_version", _params, socket) do
+    {:noreply, assign(socket, save_version_open: false)}
+  end
+
+  @impl true
+  def handle_event("save_version", params, socket) do
+    name = params |> Map.get("name", "") |> String.trim()
+    note = params |> Map.get("note", "") |> String.trim()
+
+    case Factories.save_version(socket.assigns.factory, %{name: name, note: note}) do
+      {:ok, version} ->
+        {:noreply,
+         socket
+         |> assign(
+           versions: Factories.list_versions(socket.assigns.factory.id),
+           save_version_open: false,
+           versions_open: true
+         )
+         |> put_flash(:info, "Milestone saved: #{version.name}")}
+
+      {:error, :name_required} ->
+        {:noreply, put_flash(socket, :error, "Milestone name required")}
+
+      {:error, {:schema_parity, errors}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "VERSION SCHEMA PARITY FAILED — milestone blocked. #{Enum.join(errors, "; ")}"
+         )}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not save milestone: #{inspect(reason)}")}
+    end
+  end
+
+  @impl true
+  def handle_event("confirm_restore_version", %{"id" => id}, socket) do
+    {:noreply, assign(socket, restore_confirm_id: String.to_integer(id), save_version_open: false)}
+  end
+
+  @impl true
+  def handle_event("cancel_restore_version", _params, socket) do
+    {:noreply, assign(socket, restore_confirm_id: nil)}
+  end
+
+  @impl true
+  def handle_event("restore_version", %{"id" => id}, socket) do
+    version_id = String.to_integer(id)
+
+    case Factories.restore_version(socket.assigns.factory, version_id) do
+      {:ok, %{version: version}} ->
+        {:noreply,
+         socket
+         |> reload_factory()
+         |> assign(
+           versions: Factories.list_versions(socket.assigns.factory.id),
+           restore_confirm_id: nil,
+           versions_open: true
+         )
+         |> put_flash(:info, "Restored milestone: #{version.name}")}
+
+      {:error, {:schema_parity, errors}} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "VERSION SCHEMA PARITY FAILED — restore blocked. #{Enum.join(errors, "; ")}"
+         )}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Could not restore: #{inspect(reason)}")}
+    end
   end
 
   @impl true
@@ -475,14 +586,37 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
 
   @impl true
   def render(assigns) do
-    ~H"""
+~H"""
     <div class="space-y-3">
       <div class="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 class="text-xl font-semibold text-zinc-900 dark:text-zinc-100"><%= @factory.name %></h1>
           <p class="text-sm text-zinc-500 dark:text-zinc-400"><%= @factory.client.name %></p>
         </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            phx-click="open_save_version"
+            class="rounded bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900"
+          >
+            Save version
+          </button>
+          <button
+            type="button"
+            phx-click="toggle_versions"
+            class="rounded border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            Milestones <%= if @versions != [], do: "(#{length(@versions)})", else: "" %>
+          </button>
+        </div>
       </div>
+
+      <.versions_panel
+        :if={@versions_open}
+        versions={@versions}
+        save_version_open={@save_version_open}
+        restore_confirm_id={@restore_confirm_id}
+      />
 
       <.commitment_header factory={@factory} />
 
@@ -528,6 +662,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
               add_node_line_id={@add_node_line_id}
               add_step_node_id={@add_step_node_id}
               add_step_name={@add_step_name}
+              card_menu_id={@card_menu_id}
             />
           <% "build" -> %>
             <p class="text-sm text-zinc-500 dark:text-zinc-400">Build assignments will render here.</p>
@@ -641,12 +776,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
 
   defp required_daily_rate(_), do: nil
 
-  defp required_weekly_rate(%{target_qty: qty, window_days: days})
-       when is_integer(qty) and is_integer(days) and days > 0 do
-    Float.round(qty * 7.0 / days, 1)
-  end
-
-  defp required_weekly_rate(_), do: nil
+defp required_weekly_rate(factory), do: StationMath.required_weekly_rate(factory)
 
   # If setup sits inside the commitment window, productive days shrink.
   defp required_weekly_rate_after_setup(%{target_qty: qty, window_days: window}, setup_days)
@@ -662,16 +792,44 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
 
   defp required_weekly_rate_after_setup(_, _), do: nil
 
-  # Designed output if one frame completes every lead_time_days.
-  defp designed_weekly_rate(%{lead_time_days: days}) when is_integer(days) and days > 0 do
-    Float.round(7.0 / days, 1)
+  # Prefer explicit supply cadence (e.g. "3 frames / week"); else 7/lead_time_days.
+  defp designed_weekly_rate(node) do
+    cond do
+      match = cadence_weekly_rate(Map.get(node, :supply_cadence)) ->
+        match
+
+      is_integer(node.lead_time_days) and node.lead_time_days > 0 ->
+        Float.round(7.0 / node.lead_time_days, 1)
+
+      true ->
+        nil
+    end
   end
 
-  defp designed_weekly_rate(_), do: nil
+  defp cadence_weekly_rate(cadence) when is_binary(cadence) do
+    cleaned = cadence |> String.downcase() |> String.trim()
 
-  defp format_rate(nil), do: "—"
-  defp format_rate(n) when is_float(n), do: :erlang.float_to_binary(n, decimals: 1)
-  defp format_rate(n) when is_integer(n), do: Integer.to_string(n)
+    cond do
+      Regex.match?(~r/per\s*week|\/\s*week|a\s*week|weekly/, cleaned) ->
+        case Regex.run(~r/(\d+(?:\.\d+)?)/, cleaned) do
+          [_, num] ->
+            case Float.parse(num) do
+              {f, _} when f > 0 -> Float.round(f, 1)
+              _ -> nil
+            end
+
+          _ ->
+            nil
+        end
+
+      true ->
+        nil
+    end
+  end
+
+  defp cadence_weekly_rate(_), do: nil
+
+defp format_rate(v), do: StationMath.format_rate(v)
 
   defp supplier_vs_commitment(factory, node) do
     need_wk = required_weekly_rate(factory)
@@ -692,6 +850,99 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       gap_wk: gap,
       short?: is_float(gap) and gap > 0
     }
+  end
+
+defp versions_panel(assigns) do
+    ~H"""
+    <div class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900/80">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">Milestones</div>
+        <button
+          type="button"
+          phx-click="toggle_versions"
+          class="text-[10px] text-zinc-500 hover:text-zinc-700 dark:text-zinc-400"
+        >
+          Close
+        </button>
+      </div>
+
+      <%= if @save_version_open do %>
+        <form phx-submit="save_version" class="mt-2 flex flex-wrap items-end gap-2 rounded border border-indigo-200 bg-white p-2 dark:border-indigo-900 dark:bg-zinc-900">
+          <label class="min-w-[12rem] flex-1">
+            <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Name</span>
+            <input
+              type="text"
+              name="name"
+              required
+              placeholder="e.g. Pre-Reed workshop"
+              class="mt-0.5 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+          </label>
+          <label class="min-w-[12rem] flex-[2]">
+            <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Note</span>
+            <input
+              type="text"
+              name="note"
+              placeholder="optional"
+              class="mt-0.5 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+          </label>
+          <button type="submit" class="rounded bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-zinc-100 dark:text-zinc-900">
+            Create milestone
+          </button>
+          <button type="button" phx-click="cancel_save_version" class="px-2 py-1 text-xs text-zinc-500">
+            Cancel
+          </button>
+        </form>
+      <% end %>
+
+      <%= if @versions == [] do %>
+        <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">No milestones yet. Save when you like where you are.</p>
+      <% else %>
+        <ul class="mt-2 divide-y divide-zinc-200 dark:divide-zinc-700">
+          <%= for v <- @versions do %>
+            <li class="flex flex-wrap items-center gap-2 py-1.5 text-xs">
+              <div class="min-w-0 flex-1">
+                <div class="font-medium text-zinc-800 dark:text-zinc-100">
+                  <%= v.name %>
+                  <%= if v.kind == "auto" do %>
+                    <span class="ml-1 rounded bg-zinc-200 px-1 text-[9px] uppercase text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">auto</span>
+                  <% end %>
+                </div>
+                <div class="text-[10px] tabular-nums text-zinc-400">
+                  <%= Calendar.strftime(v.inserted_at, "%Y-%m-%d %H:%M") %>
+                  <%= if v.note, do: " · #{v.note}", else: "" %>
+                </div>
+              </div>
+              <%= if @restore_confirm_id == v.id do %>
+                <span class="text-[10px] text-amber-700 dark:text-amber-300">Replace working copy? Current state auto-saved first.</span>
+                <button
+                  type="button"
+                  phx-click="restore_version"
+                  phx-value-id={v.id}
+                  class="rounded bg-amber-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-amber-500"
+                >
+                  Restore
+                </button>
+                <button type="button" phx-click="cancel_restore_version" class="text-[10px] text-zinc-500">
+                  Cancel
+                </button>
+              <% else %>
+                <button
+                  type="button"
+                  phx-click="confirm_restore_version"
+                  phx-value-id={v.id}
+                  class="rounded border border-zinc-300 px-2 py-1 text-[10px] font-medium text-zinc-700 hover:bg-white dark:border-zinc-600 dark:text-zinc-200"
+                >
+                  Restore
+                </button>
+              <% end %>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
+    </div>
+    """
   end
 
   defp commitment_header(assigns) do
@@ -804,6 +1055,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
           all_nodes={@factory.nodes}
           add_step_node_id={@add_step_node_id}
           add_step_name={@add_step_name}
+          card_menu_id={@card_menu_id}
         />
       <% end %>
 
@@ -821,6 +1073,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
                 links={@links}
                 add_step_node_id={@add_step_node_id}
                 add_step_name={@add_step_name}
+                card_menu_id={@card_menu_id}
               />
             <% end %>
           </div>
@@ -933,6 +1186,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
                 links={@links}
                 add_step_node_id={@add_step_node_id}
                 add_step_name={@add_step_name}
+                card_menu_id={@card_menu_id}
               />
           <% end %>
         <% end %>
@@ -1108,7 +1362,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
     """
   end
 
-  defp node_card(assigns) do
+defp node_card(assigns) do
     ~H"""
     <.work_cell_card
       factory={@factory}
@@ -1117,6 +1371,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       links={@links}
       add_step_node_id={@add_step_node_id}
       add_step_name={@add_step_name}
+      card_menu_id={@card_menu_id}
     />
     """
   end
@@ -1495,25 +1750,9 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
     """
   end
 
-  defp work_cell_card(assigns) do
+defp work_cell_card(assigns) do
     steps = assigns.node.steps
-
-    step_stats =
-      Enum.map(steps, fn step ->
-        qty = step.qty_per_unit
-        each = step.minutes_each || step.estimated_minutes
-        content =
-          cond do
-            is_integer(qty) and is_integer(step.minutes_each) -> qty * step.minutes_each
-            is_integer(step.estimated_minutes) -> step.estimated_minutes
-            true -> nil
-          end
-
-        people = step.people
-        stream = FactoryNodeStep.process_minutes(step)
-
-        %{step: step, content: content, stream: stream, people: people, qty: qty, each: each}
-      end)
+    step_stats = Enum.map(steps, &StationMath.step_stat/1)
 
     content_total =
       step_stats
@@ -1526,7 +1765,8 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       end
 
     # Build parallel groups: linked steps share one time bucket (max stream) and sum people
-    {ea_parallel, ea_phased, crew_designed, peak_phase} = step_timing_summary(steps, step_stats)
+    {ea_parallel, ea_phased, crew_designed, peak_phase} =
+      StationMath.step_timing_summary(steps, step_stats)
 
     # Face chrome: vertical rail joins contiguous steps in the same parallel set (3–4, or 2–3–4).
     step_stats = annotate_parallel_rails(steps, step_stats)
@@ -1564,13 +1804,15 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
           nil
       end
 
-    links = assigns[:links] || []
+links = assigns[:links] || []
     factory = assigns[:factory]
     expected_in = expected_weekly_in(assigns.node, links)
-    need_wk = factory && required_weekly_rate(factory)
+    need_wk = factory && StationMath.required_weekly_rate(factory)
     avail_label = inbound_avail_label(assigns.node, links)
     crew = crew_designed
     gate? = Map.get(assigns.node, :gate) == true
+    menu_open? = assigns[:card_menu_id] == assigns.node.id
+
     gap =
       if is_number(expected_in) and is_float(need_wk) do
         Float.round(need_wk - expected_in * 1.0, 1)
@@ -1589,7 +1831,8 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       end
 
     # Throughput from one-unit cycle vs standard productive day (see node_design_spec §20).
-    {rate_d, rate_w, rate_m} = station_dwm_rates(ea_parallel)
+    {rate_d, rate_w, rate_m} =
+      StationMath.station_dwm_rates(if(ea_parallel > 0, do: ea_parallel, else: nil))
 
     rate_gap =
       if is_float(need_wk) and is_float(rate_w) do
@@ -1630,13 +1873,18 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
       |> assign(:rate_d, rate_d)
       |> assign(:rate_w, rate_w)
       |> assign(:rate_m, rate_m)
-      |> assign(:rate_gap, rate_gap)
+|> assign(:rate_gap, rate_gap)
       |> assign(:rate_gap_short?, rate_gap_short?)
+      |> assign(:menu_open?, menu_open?)
+      |> assign(
+        :pencil_href,
+        ~p"/factory/projects/#{factory.id}/nodes/#{assigns.node.id}/pencil?seq=#{assigns.sequence || assigns.node.position}"
+      )
 
     ~H"""
     <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
-        <div class="flex items-center gap-2 border-b border-zinc-300 bg-zinc-100 px-2.5 py-1.5 dark:border-zinc-500 dark:bg-zinc-700">
+        <div class="relative flex items-center gap-2 border-b border-zinc-300 bg-zinc-100 px-2.5 py-1.5 dark:border-zinc-500 dark:bg-zinc-700">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-400 text-[10px] font-bold tabular-nums text-zinc-900 dark:border-zinc-400 dark:text-zinc-100">
             <%= @sequence || @node.position %>
           </span>
@@ -1706,6 +1954,36 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
               aria-label={status_circle_title(@status_circle)}
             >
             </span>
+            <div class="relative">
+              <button
+                type="button"
+                phx-click="toggle_card_menu"
+                phx-value-id={@node.id}
+                class="inline-flex h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-50"
+                title="Card menu"
+                aria-label="Card menu"
+                aria-expanded={to_string(@menu_open?)}
+              >
+                <span class="text-[14px] leading-none tracking-tighter" aria-hidden="true">⋮</span>
+              </button>
+              <%= if @menu_open? do %>
+                <div
+                  class="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800"
+                  role="menu"
+                >
+                  <a
+                    href={@pencil_href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="block px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                    role="menuitem"
+                    phx-click="close_card_menu"
+                  >
+                    Print pencil sheet
+                  </a>
+                </div>
+              <% end %>
+            </div>
           </div>
         </div>
 
@@ -1946,113 +2224,12 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   end
 
 
-  # Returns {ea_with_parallel_groups, ea_fully_serial, peak_concurrent_people}
-  defp step_timing_summary(steps, step_stats) do
-    stats_by_id = Map.new(step_stats, fn s -> {s.step.id, s} end)
-
-    # Union-find style groups via parallel_with (undirected for manning/time)
-    parent = Map.new(steps, fn s -> {s.id, s.id} end)
-
-    parent =
-      Enum.reduce(steps, parent, fn s, acc ->
-        case s.parallel_with_step_id do
-          nil -> acc
-          other_id -> union_ids(acc, s.id, other_id)
-        end
-      end)
-
-    groups =
-      steps
-      |> Enum.group_by(fn s -> find_root(parent, s.id) end)
-      |> Map.values()
-
-    group_streams =
-      Enum.map(groups, fn group_steps ->
-        streams =
-          group_steps
-          |> Enum.map(fn s -> stats_by_id[s.id] && stats_by_id[s.id].stream end)
-          |> Enum.reject(&is_nil/1)
-
-        people =
-          group_steps
-          |> Enum.map(fn s -> stats_by_id[s.id] && stats_by_id[s.id].people end)
-          |> Enum.reject(&is_nil/1)
-          |> Enum.sum()
-
-        stream =
-          case streams do
-            [] -> nil
-            list -> Enum.max(list)
-          end
-
-        %{stream: stream, people: people}
-      end)
-
-    ea_par =
-      group_streams
-      |> Enum.map(& &1.stream)
-      |> Enum.reject(&is_nil/1)
-      |> case do
-        [] -> 0
-        list -> Enum.sum(list)
-      end
-
-    ea_phase =
-      step_stats
-      |> Enum.map(& &1.stream)
-      |> Enum.reject(&is_nil/1)
-      |> case do
-        [] -> 0
-        list -> Enum.sum(list)
-      end
-
-    # Peak concurrent: max people in any parallel group is wrong for serial phases.
-    # For planning PDF demand at station when all methods could be staffed as designed,
-    # sum people across groups only if groups run at different times — peak is max of
-    # single-group people for true phases, but multi-crew station often has all roles present.
-    # Real Flooring: lay, screw, cut+vac may be sequential phases → peak = max group people.
-    # User also wants 2+2 on cut/vac = 4 in that phase; overall crew often sum of peaks if multi-phase same shift.
-    # Use sum of per-group peak people as "designed crew if phases don't overlap staff"
-    # AND max group as "single-phase peak". Abacus shows sum (designed headcount on card).
-    phase_people =
-      group_streams
-      |> Enum.map(& &1.people)
-      |> Enum.reject(&(&1 == 0))
-
-    crew =
-      case phase_people do
-        [] -> nil
-        list -> Enum.sum(list)
-      end
-
-    peak_phase =
-      case phase_people do
-        [] -> nil
-        list -> Enum.max(list)
-      end
-
-    {ea_par, ea_phase, crew, peak_phase}
-  end
-
-  defp find_root(parent, id) do
-    case Map.get(parent, id, id) do
-      ^id -> id
-      other -> find_root(parent, other)
-    end
-  end
-
-  defp union_ids(parent, a, b) do
-    ra = find_root(parent, a)
-    rb = find_root(parent, b)
-    if ra == rb, do: parent, else: Map.put(parent, ra, rb)
-  end
-
-  # Annotate step_stats with parallel face chrome: contiguous members of the same
+# Annotate step_stats with parallel face chrome: contiguous members of the same
   # parallel set get a vertical rail between badges (InDesign-style link, CSS).
   defp annotate_parallel_rails(steps, step_stats) do
-    parent = parallel_parent_map(steps)
+    parent = StationMath.parallel_parent_map(steps)
 
-    root_of = fn step -> find_root(parent, step.id) end
+    root_of = fn step -> StationMath.find_root(parent, step.id) end
 
     group_sizes =
       steps
@@ -2082,18 +2259,7 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
     end)
   end
 
-  defp parallel_parent_map(steps) do
-    parent = Map.new(steps, fn s -> {s.id, s.id} end)
-
-    Enum.reduce(steps, parent, fn s, acc ->
-      case s.parallel_with_step_id do
-        nil -> acc
-        other_id -> union_ids(acc, s.id, other_id)
-      end
-    end)
-  end
-
-  # White = not enough data. Orange = short vs promise (rate G or intake gap).
+# White = not enough data. Orange = short vs promise (rate G or intake gap).
   # Green reserved until fuller andon rules (do not fake green).
   defp work_cell_status_circle(steps, _content_total, ea_parallel, short?) do
     cond do
@@ -2109,43 +2275,9 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   defp status_circle_title(:green), do: "No blocks"
   defp status_circle_title(_), do: "Need data"
 
-  # Standard paid shift 8h; OH deductions in §20 of node_design_spec.
-  # Productive minutes = 480 − (15+15 breaks + 30 3S + 45 lunch + 15 standup) = 360.
-  @standard_shift_min 480
-  @oh_breaks_min 30
-  @oh_cleanup_3s_min 30
-  @oh_lunch_min 45
-  @oh_standup_min 15
-  @standard_productive_min @standard_shift_min - @oh_breaks_min - @oh_cleanup_3s_min - @oh_lunch_min -
-                             @oh_standup_min
-  @workdays_per_week 5
-  @workdays_per_month 20
+defp format_dwm(v), do: StationMath.format_dwm(v)
 
-  defp station_dwm_rates(cycle_min) when is_integer(cycle_min) and cycle_min > 0 do
-    d = Float.round(@standard_productive_min / cycle_min, 1)
-    w = Float.round(d * @workdays_per_week, 1)
-    m = Float.round(d * @workdays_per_month, 1)
-    {d, w, m}
-  end
-
-  defp station_dwm_rates(_), do: {nil, nil, nil}
-
-  defp format_dwm(nil), do: "—"
-  defp format_dwm(n) when is_float(n), do: :erlang.float_to_binary(n, decimals: 1)
-  defp format_dwm(n) when is_integer(n), do: Integer.to_string(n)
-
-  defp format_duration_minutes(m) when is_integer(m) and m > 0 do
-    hours = div(m, 60)
-    mins = rem(m, 60)
-
-    cond do
-      hours > 0 and mins > 0 -> "#{hours}h #{mins}m"
-      hours > 0 -> "#{hours}h"
-      true -> "#{mins}m"
-    end
-  end
-
-  defp format_duration_minutes(_), do: "—"
+  defp format_duration_minutes(m), do: StationMath.format_duration_minutes(m)
 
   defp parse_money_to_cents(nil), do: nil
   defp parse_money_to_cents(""), do: nil

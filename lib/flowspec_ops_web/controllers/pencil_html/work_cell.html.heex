@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= @page_title %></title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        font-size: 11pt;
+        line-height: 1.35;
+        color: #111;
+        background: #fff;
+      }
+      .toolbar {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.6rem 0.9rem;
+        border-bottom: 1px solid #ccc;
+        background: #f4f4f5;
+        position: sticky;
+        top: 0;
+      }
+      .toolbar button, .toolbar a {
+        font: inherit;
+        font-size: 10pt;
+        padding: 0.35rem 0.7rem;
+        border: 1px solid #999;
+        border-radius: 4px;
+        background: #fff;
+        color: #111;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .toolbar .hint { font-size: 9pt; color: #555; }
+      .sheet {
+        max-width: 8.5in;
+        margin: 0 auto;
+        padding: 0.55in 0.6in 0.7in;
+      }
+      h1 {
+        margin: 0 0 0.15rem;
+        font-size: 16pt;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+      .meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.15rem 1rem;
+        margin: 0.35rem 0 0.75rem;
+        font-size: 9.5pt;
+      }
+      .meta .k { color: #444; font-weight: 600; text-transform: uppercase; font-size: 8pt; letter-spacing: 0.04em; }
+      .meta .v { font-variant-numeric: tabular-nums; }
+      .gates { display: flex; gap: 0.75rem; font-size: 9.5pt; font-variant-numeric: tabular-nums; }
+      .gates strong { font-weight: 700; }
+      h2 {
+        margin: 0.85rem 0 0.3rem;
+        font-size: 10pt;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        border-bottom: 1.5px solid #111;
+        padding-bottom: 0.15rem;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 9.5pt;
+        font-variant-numeric: tabular-nums;
+      }
+      th, td {
+        border: 1px solid #bbb;
+        padding: 0.28rem 0.35rem;
+        vertical-align: top;
+        text-align: left;
+      }
+      th {
+        background: #e4e4e7;
+        font-weight: 700;
+        font-size: 8pt;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      td.num, th.num { text-align: right; }
+      td.blank { height: 1.15rem; }
+      .notes {
+        margin: 0.35rem 0 0.15rem;
+        border: 1px solid #ccc;
+        min-height: 2.4rem;
+        padding: 0.2rem 0.35rem;
+      }
+      .notes-label {
+        font-size: 8pt;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #444;
+        margin-bottom: 0.1rem;
+      }
+      .notes-lines {
+        border-top: 1px solid #ddd;
+        min-height: 1.6rem;
+      }
+      .fourm-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.55rem 0.75rem;
+      }
+      .fourm-grid h3 {
+        margin: 0 0 0.2rem;
+        font-size: 9pt;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      @media print {
+        .toolbar { display: none !important; }
+        .sheet { padding: 0; max-width: none; }
+        body { font-size: 10pt; }
+        a { color: inherit; text-decoration: none; }
+        @page { margin: 0.5in; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="toolbar">
+      <div class="hint">Pencil sheet · browser Print → paper or PDF</div>
+      <div style="display:flex;gap:0.4rem;">
+        <button type="button" onclick="window.print()">Print…</button>
+        <a href={~p"/factory/projects/#{@factory.id}"}>Back to net</a>
+      </div>
+    </div>
+
+    <main class="sheet">
+      <h1><%= @node.name %></h1>
+      <div class="meta">
+        <div>
+          <div class="k">Factory</div>
+          <div class="v"><%= @factory.name %></div>
+        </div>
+        <div>
+          <div class="k">Line</div>
+          <div class="v"><%= if @line, do: @line.name, else: "—" %></div>
+        </div>
+        <div>
+          <div class="k">Sequence</div>
+          <div class="v">#<%= @seq %></div>
+        </div>
+        <div>
+          <div class="k">Version</div>
+          <div class="v"><%= version_label(@latest_version) %></div>
+        </div>
+        <div>
+          <div class="k">Printed</div>
+          <div class="v"><%= format_printed_at(@printed_at) %></div>
+        </div>
+        <div>
+          <div class="k">Design gates</div>
+          <div class="v gates">
+            <span>P <strong><%= yes_dash(@sheet.product_ready) %></strong></span>
+            <span>M <strong><%= yes_dash(@sheet.method_instruction) %></strong></span>
+            <span>G <strong><%= yes_dash(@sheet.gate) %></strong></span>
+            <span>Bypass <strong><%= yes_dash(@sheet.bypass_allowed) %></strong></span>
+          </div>
+        </div>
+      </div>
+
+      <h2>Abacus</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Cycle</th>
+            <th class="num">Batch</th>
+            <th>Batch cycle</th>
+            <th class="num">D</th>
+            <th class="num">W</th>
+            <th class="num">M</th>
+            <th class="num">N/wk</th>
+            <th class="num">G</th>
+            <th class="num">Slots</th>
+            <th class="num">Crew</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><%= format_duration(@sheet.ea_parallel) %></td>
+            <td class="num"><%= dash_or(@sheet.slots) %></td>
+            <td><%= format_duration(@sheet.batch_cycle_min) %></td>
+            <td class="num"><%= format_dwm(@sheet.rate_d) %></td>
+            <td class="num"><%= format_dwm(@sheet.rate_w) %></td>
+            <td class="num"><%= format_dwm(@sheet.rate_m) %></td>
+            <td class="num"><%= format_rate(@sheet.need_wk) %></td>
+            <td class="num"><%= format_gap(@sheet.rate_gap) %></td>
+            <td class="num"><%= dash_or(@sheet.slots) %></td>
+            <td class="num"><%= dash_or(@sheet.crew) %></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+
+      <h2>Steps</h2>
+      <table>
+        <thead>
+          <tr>
+            <th class="num">#</th>
+            <th>Step</th>
+            <th class="num">Content m</th>
+            <th class="num">Process m</th>
+            <th class="num">Ppl</th>
+            <th>Shared</th>
+            <th>∥</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <%= for stat <- @sheet.step_stats do %>
+            <% step = stat.step %>
+            <tr>
+              <td class="num"><%= step.position %></td>
+              <td><%= step.name %></td>
+              <td class="num"><%= dash_or(stat.content) %></td>
+              <td class="num"><%= dash_or(stat.stream) %></td>
+              <td class="num"><%= dash_or(stat.people) %></td>
+              <td><%= if step.shared == false, do: "N", else: "Y" %></td>
+              <td><%= if step.parallel_with_step_id, do: "Y", else: "—" %></td>
+              <td class="blank"></td>
+            </tr>
+          <% end %>
+          <tr>
+            <td class="num blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+
+      <h2>Manpower</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Role / source</th>
+            <th class="num">Demand</th>
+            <th class="num">Cover</th>
+            <th class="num">Gap</th>
+            <th>Pencil</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Designed crew (Σ phase)</td>
+            <td class="num"><%= dash_or(@sheet.crew) %></td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="blank"></td>
+          </tr>
+          <tr>
+            <td>Peak phase</td>
+            <td class="num"><%= dash_or(@sheet.peak_phase) %></td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="blank"></td>
+          </tr>
+          <tr>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+            <td class="blank"></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+
+      <h2>Four M</h2>
+      <div class="fourm-grid">
+        <%= for m <- ["Man", "Machine", "Method", "Material"] do %>
+          <div>
+            <h3><%= m %></h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th class="num">Qty</th>
+                  <th>Status</th>
+                  <th>Acquire / place / contract</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+                <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+                <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+              </tbody>
+            </table>
+          </div>
+        <% end %>
+      </div>
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+    </main>
+  </body>
+</html>
