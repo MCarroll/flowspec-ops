@@ -27,17 +27,23 @@ defmodule FlowspecOpsWeb.PencilHTML do
   def queue_role_label(:queue), do: "Queue"
   def queue_role_label(_), do: "Queue"
 
-  def print_css do
+def print_css do
     """
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
-    body {
+    html, body {
       margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: auto;
+      overflow: visible;
+      background: #fff;
+    }
+    body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
       font-size: 11pt;
       line-height: 1.35;
       color: #111;
-      background: #fff;
     }
     .toolbar {
       display: flex;
@@ -49,6 +55,7 @@ defmodule FlowspecOpsWeb.PencilHTML do
       background: #f4f4f5;
       position: sticky;
       top: 0;
+      z-index: 20;
     }
     .toolbar button, .toolbar a {
       font: inherit;
@@ -63,9 +70,11 @@ defmodule FlowspecOpsWeb.PencilHTML do
     }
     .toolbar .hint { font-size: 9pt; color: #555; }
     .sheet {
-      max-width: 8.5in;
+      /* Screen preview ≈ Letter portrait content width */
+      width: 100%;
+      max-width: 7.5in;
       margin: 0 auto;
-      padding: 0.55in 0.6in 0.7in;
+      padding: 0.55in 0.5in 0.85in;
     }
     h1 {
       margin: 0 0 0.15rem;
@@ -90,6 +99,7 @@ defmodule FlowspecOpsWeb.PencilHTML do
     .meta .v { font-variant-numeric: tabular-nums; }
     .gates {
       display: flex;
+      flex-wrap: wrap;
       gap: 0.75rem;
       font-size: 9.5pt;
       font-variant-numeric: tabular-nums;
@@ -155,12 +165,60 @@ defmodule FlowspecOpsWeb.PencilHTML do
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
+/* Screen-only page cue; real page # is print footer / @page */
+    .print-footer {
+      display: none;
+    }
+/* Default print geometry: US Letter portrait (8.5×11). Browsers may still
+       remember last dialog choice; user can flip to landscape without data loss. */
+    @page {
+      size: letter portrait;
+      margin: 0.5in 0.55in 0.7in 0.55in;
+      @bottom-right {
+        content: counter(page);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+        font-size: 9pt;
+        color: #333;
+      }
+    }
     @media print {
       .toolbar { display: none !important; }
-      .sheet { padding: 0; max-width: none; }
+      html, body {
+        width: auto !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        background: #fff !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .sheet {
+        width: auto !important;
+        max-width: 7.4in !important;
+        margin: 0 auto !important;
+        padding: 0 0 0.35in 0 !important;
+      }
+      /* Keep content portrait-shaped so engines prefer portrait over landscape */
+      .fourm-grid {
+        grid-template-columns: 1fr;
+      }
+      table { page-break-inside: auto; }
+      tr, h2 { page-break-inside: avoid; }
       body { font-size: 10pt; }
       a { color: inherit; text-decoration: none; }
-      @page { margin: 0.5in; }
+      /* Fallback page number (Safari / some WebKit): repeats each printed page */
+      .print-footer {
+        display: block;
+        position: fixed;
+        right: 0;
+        bottom: 0;
+        font-size: 9pt;
+        color: #333;
+        font-variant-numeric: tabular-nums;
+      }
+      .print-footer .page-num::after {
+        content: counter(page);
+      }
     }
     """
   end

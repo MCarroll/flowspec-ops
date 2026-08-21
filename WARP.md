@@ -67,6 +67,16 @@ For CAD/manufacturing intake interactions, agents should guide toward this one-c
 - Keep naming consistent with this domain model (`ops.flowspec.co`, client/contact/task vocabulary).
 - Before handoff, validate with compile and relevant local checks.
 
+## Factory Versions / Milestones (Twin Schema Rule)
+Named milestones copy live factory tables into `factory_version_*` twins (`FlowspecOps.Factories.Versioning`).
+
+Required agent behavior on any factory graph schema change:
+1. If you alter a **versioned primary** table (`factory_lines`, `skus`, `factory_nodes`, `factory_links`, `factory_node_steps`, `factory_node_step_items`), alter its **`factory_version_*` twin in the same migration** (same column name + type).
+2. Update `Versioning` copy/restore SQL if the new column must round-trip.
+3. Run `mix flowspec.versions.parity` after migrate — must print `VERSION SCHEMA PARITY OK`.
+4. Milestone Save fails closed on parity errors; do not weaken that gate.
+5. Do not store the working plan only as JSON — tables remain system of record.
+
 ## Orchestration Defaults for This Directory
 - For coding/build tasks, orchestrator should delegate to codex builder agent by default.
 - Preferred builder model: `gpt-5-2-codex-low`.

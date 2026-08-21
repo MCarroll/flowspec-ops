@@ -9,8 +9,8 @@
     </style>
   </head>
   <body>
-    <div class="toolbar">
-      <div class="hint">Pencil sheet · browser Print → paper or PDF</div>
+<div class="toolbar">
+      <div class="hint">Pencil sheet · Letter portrait (8.5×11) · Print → paper or PDF</div>
       <div style="display:flex;gap:0.4rem;">
         <button type="button" onclick="window.print()">Print…</button>
         <a href={~p"/factory/projects/#{@factory.id}"}>Back to net</a>
@@ -195,10 +195,11 @@
           </div>
         <% end %>
       </div>
-      <div class="notes">
+<div class="notes">
         <div class="notes-label">Notes</div>
         <div class="notes-lines"></div>
       </div>
     </main>
+    <div class="print-footer" aria-hidden="true"><span class="page-num"></span></div>
   </body>
 </html>

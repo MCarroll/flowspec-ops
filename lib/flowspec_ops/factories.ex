@@ -8,7 +8,17 @@ defmodule FlowspecOps.Factories do
   alias FlowspecOps.Factories.FactorySku
   alias FlowspecOps.Factories.FactoryNode
   alias FlowspecOps.Factories.FactoryNodeStep
-  alias FlowspecOps.Factories.FactoryNodeStepItem
+alias FlowspecOps.Factories.FactoryNodeStepItem
+  alias FlowspecOps.Factories.Versioning
+
+  # --- Versions / milestones ---
+
+  defdelegate assert_schema_parity(), to: Versioning
+  defdelegate schema_parity_errors(), to: Versioning
+  defdelegate list_versions(factory_id), to: Versioning
+  defdelegate save_version(factory, attrs), to: Versioning
+  defdelegate restore_version(factory, version_id), to: Versioning
+  defdelegate restore_version(factory, version_id, opts), to: Versioning
 
   def list_factories do
     Repo.all(from f in Factory, order_by: f.name, preload: [:client])

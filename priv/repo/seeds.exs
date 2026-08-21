@@ -352,7 +352,7 @@ frame_mfg_a =
     first_batch_qty: nil,
     production_batch_slots: nil,
     lead_time_days: 7,
-    supply_cadence: "1 frame / week"
+    supply_cadence: "3 frames / week"
   })
 
 transport_a =
@@ -384,7 +384,7 @@ frame_mfg_b =
     setup_days: 30,
     first_batch_days: 7,
     lead_time_days: 7,
-    supply_cadence: "1 frame / week",
+    supply_cadence: "3 frames / week",
     note: "Parallel rope — add capacity without redrawing the plant path."
   })
 

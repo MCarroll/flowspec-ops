@@ -58,6 +58,8 @@ Order is consulting-throughput first (SOHO). Re-rank only with explicit dialog.
 |---|--------|---------|------------|
 | **P0** | **Save / versions** (+ change log; Editor role in schema = Michael) | Safe iMod entry; workshop baseline; unlocks later share | Card chrome usable enough to edit |
 | **P0** | **PDF projection** (factory \| line \| card) + zeros/placeholders as full-kit signal | External conversation weapon; pencil-away-from-screen cards | Abacus honesty; staff roll-up good enough; mode-aware people math |
+| **P0** | **Line + net summary reports** (+ bulk card pencil pack) | Reed/Roger/Robert email weapon at line and factory scope; workshop handout | T2.1 card sheets live; line ⋮ entry |
+| **P0-soon** | **Card ⋮ guided build** (add feeding / transport / related — not Grasshopper canvas) | Desk net authoring without visual graph editor; legal next moves from each card | Domain create+link verbs; adjacency rules grilled |
 | **P1** | **Four M tables on PDF** (real rows when data exists; zeros when not) | Zeros teach gap; filled rows win acquire/place/contract fight | P0 PDF shell; progressive F-path data |
 | **P1** | **CSV acquisition list** | Purchasing handoff (Roger / Flowspec app later) | Machine/material rows |
 | **P2** | **Share / multi-editor surface** (Reader links, others edit) | Schema reserved in P0; **surface is v2** | Versions stable; real demand for second Editor |
@@ -127,6 +129,39 @@ Order is consulting-throughput first (SOHO). Re-rank only with explicit dialog.
 3. Same abacus/staff numbers as face where data exists — no second math.
 4. No tutorial prose on the page.
 
+**Shipped 2026-08-11:** work_cell + queue (feeding/storage) + storage-group pencil sheets; card ⋮ print. Supplier/transport sheets still open.
+
+### T2.2 — Line + net summary reports (next — grill 2026-08-11)
+
+**Intent (provisional until grilled):** Line and factory (net) each get:
+1. **Summary report** — expert tables: roll-up abacus / manpower / Four M / commitment vs can; zeros load-bearing; no tutorial prose.
+2. **Bulk pencil pack** — one print job that includes the **same card pencil sheets** already built (work_cell, queue, storage group, …), scoped to that line or whole net.
+
+**Entry points (intent):**
+- **Line ⋮** after line title, before spine — Summary · Print all card sheets (pack) · later line build verbs.
+- **Net / factory** — factory chrome (near Save version / Milestones or net-level ⋮) — Summary · Print all card sheets for factory.
+
+**Not yet locked:** single long HTML vs multi-section with page breaks; whether bulk pack is “summary first then every card” or pack-only menu item; supplier/transport inclusion before their sheets exist.
+
+**Depends on:** T2.1 card sheets (done for primary kinds); shared StationMath / print CSS.
+
+### T6 — Card ⋮ guided build / adjacency navigation (soon — not this slice)
+
+**Product move (2026-08-11 dialog):** Card ⋮ is the **local build menu**, not only export. From a card, guided actions like **add feeding**, **add transport**, (later link/relate) — **built-in navigation** that grows the net without a Grasshopper-style free canvas.
+
+**Why:** Users stay on the scannable card spine; legal next moves teach flow structure; one write path (menu → domain create + link).
+
+**Priority:** **Soon** after line/net reports — importance rising as ⋮ proves itself. Do **not** silent-default adjacency.
+
+**Thin claims (pre-grill):**
+1. ⋮ stays a short menu: print · allowed adds · destructive last — not a junk drawer.
+2. Each add verb has **direction** (upstream feed vs downstream hold, etc.) encoded in the label.
+3. Line ⋮ owns line-level adds; card ⋮ owns **from-this-node** adjacency.
+4. Storage-group ⋮ vs member lot ⋮ ownership for “add lot” must be explicit before code.
+5. No canvas/graph editor track — adjacency menus are the v1 authoring path.
+
+**Open before implement:** adjacency table (from_kind → actions); first verb to ship (candidate: add feeding before/into this station).
+
 ### T3 — Share (v2 surface)
 
 1. **v1:** single Editor (Michael); partners via print + live present; no invite UI required.
@@ -165,8 +200,10 @@ Order is consulting-throughput first (SOHO). Re-rank only with explicit dialog.
 ## Open questions (do not silent-default)
 
 1. Versions v1: manual Save only vs quiet auto-draft every N minutes while Michael presents live?
-2. PDF multi-card packing: one station per page always, or pack when emailing a whole line? **Deferred** until pencil card sheet is in hand (2026-08-11).
+2. Line/net bulk pack: summary-then-all-cards one document, or two menu actions (Summary | Pack cards only)? Page break policy per card?
 3. First CLI verbs when we crack them open: spin up project/line shell, or mutate existing iMod stations?
+4. Card ⋮ adjacency: first ship verb and direction labels (feeding / transport / …)?
+5. Unified card header component: **wait** until trailing clusters stabilize (supplier/transport ⋮ + build verbs) — do not extract early.
 
 ---
 
@@ -178,5 +215,6 @@ Order is consulting-throughput first (SOHO). Re-rank only with explicit dialog.
 | 2026-08-06 | Q1–Q3 clarified: zeros = full-kit signal + pencil cards; Michael sole Editor v1, multi-edit surface v2; Whisper/CLI = constant efficiency path not near sprint. |
 | 2026-08-08 | Versions implemented: table-copy milestones, parity Mix task, Save/Restore UI, WARP twin rule. |
 | 2026-08-11 | PDF T2.1 locked: single-card pencil sheet first; card ⋮ after andon; line ⋮ after title; HTML→browser Print; kind focus work_cell + feeding/storage/bypass; notes strip under each block; version name when milestone exists; packing deferred. |
+| 2026-08-11 | T2.1 shipped work_cell + queue + storage-group pencil. T2.2 line/net summary + bulk card pack next. T6 card ⋮ guided build (add feeding/transport) soon — not canvas. Unified header deferred. |
 
 *When a track starts: write thin phase claims → conflict check → implement one slice → Michael uses on iMod VA.*

@@ -1681,13 +1681,13 @@ defp node_card(assigns) do
                 class="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800"
                 role="menu"
               >
-                <a
+<a
                   href={@pencil_href}
                   target="_blank"
                   rel="noopener noreferrer"
                   class="block px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
                   role="menuitem"
-                  phx-click="close_card_menu"
+                  data-phx-link="false"
                 >
                   Print pencil sheet
                 </a>
@@ -1808,13 +1808,13 @@ defp node_card(assigns) do
                 class="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800"
                 role="menu"
               >
-                <a
+<a
                   href={@pencil_href}
                   target="_blank"
                   rel="noopener noreferrer"
                   class="block px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
                   role="menuitem"
-                  phx-click="close_card_menu"
+                  data-phx-link="false"
                 >
                   Print pencil sheet
                 </a>
@@ -2068,13 +2068,13 @@ links = assigns[:links] || []
                   class="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800"
                   role="menu"
                 >
-                  <a
+<a
                     href={@pencil_href}
                     target="_blank"
                     rel="noopener noreferrer"
                     class="block px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
                     role="menuitem"
-                    phx-click="close_card_menu"
+                    data-phx-link="false"
                   >
                     Print pencil sheet
                   </a>
