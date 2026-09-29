@@ -172,30 +172,129 @@
         <div class="notes-lines"></div>
       </div>
 
+      <h2>Stand-up</h2>
+      <table>
+        <thead>
+          <tr>
+            <th class="num">Weeks</th>
+            <th class="num">People</th>
+            <th>Source</th>
+            <th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="num"><%= format_qty(@sheet.standup_weeks) %></td>
+            <td class="num"><%= dash_or(@sheet.standup_people) %></td>
+            <td><%= standup_source_label(@sheet.standup_source) %></td>
+            <td><%= dash_or(@sheet.standup_note) %></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="notes">
+        <div class="notes-label">Notes</div>
+        <div class="notes-lines"></div>
+      </div>
+
       <h2>Four M</h2>
       <div class="fourm-grid">
-        <%= for m <- ["Man", "Machine", "Method", "Material"] do %>
-          <div>
-            <h3><%= m %></h3>
-            <table>
-              <thead>
+        <div>
+          <h3>Man</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th class="num">Qty</th>
+                <th>Status</th>
+                <th>Acquire / place / contract</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+              <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+              <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h3>Machine</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th class="num">Qty</th>
+                <th>Status</th>
+                <th>Acquire / place / contract</th>
+              </tr>
+            </thead>
+            <tbody>
+              <%= for item <- @sheet.machine_items do %>
                 <tr>
-                  <th>Item</th>
-                  <th class="num">Qty</th>
-                  <th>Status</th>
-                  <th>Acquire / place / contract</th>
+                  <td><%= item.name %></td>
+                  <td class="num"><%= format_qty(item.qty) %></td>
+                  <td class="blank"></td>
+                  <td class="blank"></td>
                 </tr>
-              </thead>
-              <tbody>
+              <% end %>
+              <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+              <%= if @sheet.machine_items == [] do %>
                 <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
                 <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h3>Method</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th class="num">Qty</th>
+                <th>Status</th>
+                <th>Acquire / place / contract</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+              <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+              <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h3>Material</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th class="num">Qty</th>
+                <th>Status</th>
+                <th>Acquire / place / contract</th>
+              </tr>
+            </thead>
+            <tbody>
+              <%= for item <- @sheet.material_items do %>
+                <tr>
+                  <td><%= item.name %></td>
+                  <td class="num"><%= format_qty(item.qty) %></td>
+                  <td class="blank"></td>
+                  <td class="blank"></td>
+                </tr>
+              <% end %>
+              <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+              <%= if @sheet.material_items == [] do %>
                 <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
-              </tbody>
-            </table>
-          </div>
-        <% end %>
+                <tr><td class="blank"></td><td class="blank"></td><td class="blank"></td><td class="blank"></td></tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
       </div>
-<div class="notes">
+      <div class="notes">
         <div class="notes-label">Notes</div>
         <div class="notes-lines"></div>
       </div>

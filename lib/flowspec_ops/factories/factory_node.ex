@@ -13,6 +13,11 @@ defmodule FlowspecOps.Factories.FactoryNode do
     field :slots, :integer
     field :storage_group, :string
     field :crew_size, :integer
+    # Stand-up demand (engineered full kit — not PM execution)
+    field :standup_weeks, :float
+    field :standup_people, :integer
+    field :standup_source, Ecto.Enum, values: [:in_house, :subcontract, :mixed]
+    field :standup_note, :string
     # Shared
     field :inspection_point, :boolean, default: false
     field :gate, :boolean, default: false
@@ -48,12 +53,16 @@ defmodule FlowspecOps.Factories.FactoryNode do
     node
     |> cast(attrs, [
       :factory_id, :kind, :name, :position, :bypass_allowed, :note,
-      :queue_role, :slots, :storage_group, :crew_size, :inspection_point, :gate, :product_ready, :method_instruction, :line_id, :location_note,
+      :queue_role, :slots, :storage_group, :crew_size,
+      :standup_weeks, :standup_people, :standup_source, :standup_note,
+      :inspection_point, :gate, :product_ready, :method_instruction, :line_id, :location_note,
       :lead_time_days, :supply_cadence,
       :setup_days, :first_batch_days, :first_batch_qty, :production_batch_slots,
       :transport_duration_minutes, :from_location, :to_location,
       :vendor_name, :batch_size, :ship_weekday, :transit_days
     ])
+    |> validate_number(:standup_weeks, greater_than: 0)
+    |> validate_number(:standup_people, greater_than: 0)
     |> validate_required([:factory_id, :kind, :name, :position])
     |> unique_constraint([:factory_id, :line_id, :position], name: :factory_nodes_factory_id_line_id_position_index)
   end

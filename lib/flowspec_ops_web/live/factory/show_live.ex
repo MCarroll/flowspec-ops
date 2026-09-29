@@ -567,7 +567,11 @@ def handle_event("cancel_commitment_edit", _params, socket) do
         slots: parse_optional_positive_int(Map.get(params, "slots")),
         note: blank_to_nil(Map.get(params, "note")),
         product_ready: checkbox_true?(params, "product_ready"),
-        method_instruction: checkbox_true?(params, "method_instruction")
+        method_instruction: checkbox_true?(params, "method_instruction"),
+        standup_weeks: parse_optional_positive_float(Map.get(params, "standup_weeks")),
+        standup_people: parse_optional_positive_int(Map.get(params, "standup_people")),
+        standup_source: parse_standup_source(Map.get(params, "standup_source")),
+        standup_note: blank_to_nil(Map.get(params, "standup_note"))
       }
 
       case Factories.update_node(node, attrs) do
@@ -757,6 +761,54 @@ def handle_event("cancel_commitment_edit", _params, socket) do
   defp parse_optional_positive_float(n) when is_integer(n) and n > 0, do: n * 1.0
   defp parse_optional_positive_float(n) when is_float(n) and n > 0, do: n
   defp parse_optional_positive_float(_), do: nil
+
+  defp parse_standup_source(nil), do: nil
+  defp parse_standup_source(""), do: nil
+  defp parse_standup_source("in_house"), do: :in_house
+  defp parse_standup_source("subcontract"), do: :subcontract
+  defp parse_standup_source("mixed"), do: :mixed
+  defp parse_standup_source(_), do: nil
+
+  defp standup_face_label(node) do
+    parts =
+      []
+      |> then(fn acc ->
+        case Map.get(node, :standup_weeks) do
+          w when is_number(w) and w > 0 ->
+            label =
+              if is_float(w) and w == Float.floor(w) do
+                "#{trunc(w)}w"
+              else
+                s = :erlang.float_to_binary(w * 1.0, decimals: 1) |> String.trim_trailing("0") |> String.trim_trailing(".")
+                "#{s}w"
+              end
+
+            acc ++ [label]
+
+          _ ->
+            acc
+        end
+      end)
+      |> then(fn acc ->
+        case Map.get(node, :standup_people) do
+          p when is_integer(p) and p > 0 -> acc ++ ["#{p} ppl"]
+          _ -> acc
+        end
+      end)
+      |> then(fn acc ->
+        case Map.get(node, :standup_source) do
+          :in_house -> acc ++ ["in-house"]
+          :subcontract -> acc ++ ["sub"]
+          :mixed -> acc ++ ["mixed"]
+          _ -> acc
+        end
+      end)
+
+    case parts do
+      [] -> nil
+      list -> Enum.join(list, " · ")
+    end
+  end
 
   defp format_qty_input(nil), do: ""
   defp format_qty_input(n) when is_integer(n), do: Integer.to_string(n)
@@ -1970,9 +2022,10 @@ links = assigns[:links] || []
       |> assign(:rate_d, rate_d)
       |> assign(:rate_w, rate_w)
       |> assign(:rate_m, rate_m)
-|> assign(:rate_gap, rate_gap)
+      |> assign(:rate_gap, rate_gap)
       |> assign(:rate_gap_short?, rate_gap_short?)
       |> assign(:menu_open?, menu_open?)
+      |> assign(:standup_label, standup_face_label(assigns.node))
       |> assign(
         :pencil_href,
         ~p"/factory/projects/#{factory.id}/nodes/#{assigns.node.id}/pencil?seq=#{assigns.sequence || assigns.node.position}"
@@ -2170,9 +2223,9 @@ links = assigns[:links] || []
                 <%= for item <- Map.get(step, :items) || [] do %>
                   <div class="text-[10px] text-zinc-400">
                     <%= if item.kind == :material do %>
-                      burn <%= item.name %><%= if item.qty, do: " · #{format_qty_input(item.qty)}/unit", else: "" %><%= if burn = FlowspecOps.Factories.FactoryNodeStepItem.burn_per_unit_cents(item) do %> · <%= format_money_cents(burn) %>/u<% end %>
+                      material <%= item.name %><%= if item.qty, do: " · #{format_qty_input(item.qty)}/unit", else: "" %><%= if burn = FlowspecOps.Factories.FactoryNodeStepItem.burn_per_unit_cents(item) do %> · <%= format_money_cents(burn) %>/u<% end %>
                     <% else %>
-                      asset <%= item.name %><%= if item.qty && item.qty != 1, do: " ×#{item.qty}", else: "" %><%= if item.unit_cost_cents, do: " #{format_money_cents(item.unit_cost_cents)}", else: "" %>
+                      machine <%= item.name %><%= if item.qty && item.qty != 1, do: " ×#{item.qty}", else: "" %><%= if item.unit_cost_cents, do: " #{format_money_cents(item.unit_cost_cents)}", else: "" %>
                     <% end %>
                   </div>
                 <% end %>
@@ -2281,22 +2334,22 @@ links = assigns[:links] || []
               </div>
             </div>
 
-            <div class="min-w-0" title="Assets to spin up this station (one-time)">
-              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Stand-up</div>
+            <div class="min-w-0" title="Machine asset $ (one-time kit total)">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Mach $</div>
               <div class="font-semibold">
                 <%= if @stand_up_cents, do: format_money_cents(@stand_up_cents), else: "—" %>
               </div>
             </div>
 
-            <div class="min-w-0" title="Consumables per unit">
-              <div class="truncate text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Burn/u</div>
+            <div class="min-w-0" title="Materials / consumables per unit">
+              <div class="truncate text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Mat/u</div>
               <div class="font-semibold">
                 <%= if @burn_unit_cents, do: format_money_cents(@burn_unit_cents), else: "—" %>
               </div>
             </div>
 
-            <div class="min-w-0" title="Consumables per process batch (burn/u × batch)">
-              <div class="truncate text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Burn/b</div>
+            <div class="min-w-0" title="Materials per process batch (mat/u × batch)">
+              <div class="truncate text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Mat/b</div>
               <div class="font-semibold">
                 <%= if @burn_batch_cents, do: format_money_cents(@burn_batch_cents), else: "—" %>
               </div>
@@ -2313,6 +2366,16 @@ links = assigns[:links] || []
               ×
             </button>
           </div>
+
+          <%= if @standup_label do %>
+            <div
+              class="mt-1.5 border-t border-zinc-200/80 pt-1.5 text-[10px] tabular-nums text-zinc-600 dark:border-zinc-600 dark:text-zinc-300"
+              title="Stand-up demand to bring station online (full kit eng — not PM)"
+            >
+              <span class="font-semibold uppercase tracking-wide text-zinc-400">Stand-up</span>
+              <span class="ml-1 font-medium text-zinc-800 dark:text-zinc-100"><%= @standup_label %></span>
+            </div>
+          <% end %>
         </div>
 
       </div>
@@ -2643,7 +2706,8 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
           </form>
 
           <div class="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700">
-            <h4 class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Stand-up · assets</h4>
+            <h4 class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Machines</h4>
+            <p class="mb-1.5 text-[10px] text-zinc-400">Assets at the station (saw, table, power…)</p>
             <.item_section
               items={@equip_items}
               mode={:stand_up}
@@ -2653,7 +2717,8 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
           </div>
 
           <div class="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700">
-            <h4 class="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Burn · per unit</h4>
+            <h4 class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Materials</h4>
+            <p class="mb-1.5 text-[10px] text-zinc-400">Consumables burned per unit</p>
             <.item_section
               items={@material_items}
               mode={:burn}
@@ -2737,7 +2802,7 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
           <%= if @items == [] do %>
             <tr>
               <td colspan={if(@mode == :burn, do: 6, else: 5)} class="px-2 py-2 text-center text-zinc-400">
-                <%= if @mode == :burn, do: "No consumables yet", else: "No assets yet" %>
+                <%= if @mode == :burn, do: "No materials yet", else: "No machines yet" %>
               </td>
             </tr>
           <% end %>
@@ -2833,7 +2898,7 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
                   name="name"
                   required
                   form={"add-item-#{@mode}-#{@step_id}"}
-                  placeholder={if @mode == :burn, do: "Consumable", else: "Asset"}
+                  placeholder={if @mode == :burn, do: "Material", else: "Machine"}
                   class="w-full rounded border border-zinc-300 bg-white px-1.5 py-1 text-[11px] dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
                 />
               </td>
@@ -3038,7 +3103,7 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
         <div class="relative w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
           <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Station</h3>
           <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-            Name, design gates (product / method), bay slots. Steps edited on each row. Gates print on PDF.
+            Name, design gates, bay slots, stand-up demand. Steps edited on each row. Gates print on PDF.
           </p>
 
           <form phx-submit="save_station" class="mt-3 space-y-3">
@@ -3100,6 +3165,62 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
                 class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
               />
             </label>
+
+            <div class="space-y-2 rounded border border-zinc-200 bg-zinc-50 px-2.5 py-2 dark:border-zinc-600 dark:bg-zinc-800/40">
+              <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                Stand-up · online demand
+              </div>
+              <p class="text-[10px] text-zinc-500 dark:text-zinc-400">
+                What it takes to bring this station online (if full kit). Engineered here — not managed here.
+              </p>
+              <div class="grid grid-cols-3 gap-2">
+                <label class="block">
+                  <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Weeks</span>
+                  <input
+                    type="number"
+                    name="standup_weeks"
+                    min="0"
+                    step="any"
+                    value={format_qty_input(@node.standup_weeks)}
+                    placeholder="—"
+                    class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                </label>
+                <label class="block">
+                  <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">People</span>
+                  <input
+                    type="number"
+                    name="standup_people"
+                    min="1"
+                    value={@node.standup_people}
+                    placeholder="—"
+                    class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                </label>
+                <label class="block">
+                  <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Source</span>
+                  <select
+                    name="standup_source"
+                    class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  >
+                    <option value="" selected={is_nil(@node.standup_source)}>—</option>
+                    <option value="in_house" selected={@node.standup_source == :in_house}>In-house</option>
+                    <option value="subcontract" selected={@node.standup_source == :subcontract}>Subcontract</option>
+                    <option value="mixed" selected={@node.standup_source == :mixed}>Mixed</option>
+                  </select>
+                </label>
+              </div>
+              <label class="block">
+                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Stand-up note</span>
+                <input
+                  type="text"
+                  name="standup_note"
+                  value={@node.standup_note}
+                  placeholder="Vendor, scope, dependencies…"
+                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </label>
+            </div>
 
             <label class="block">
               <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Note</span>

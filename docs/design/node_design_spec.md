@@ -203,6 +203,23 @@ Each row:
 - Readiness white/orange/green  
 - Step summary lines may show `+equip …` as shorthand of linked rows  
 
+**Implementation (2026-08-25):** step popup labels are **Machines** (`kind: :equipment`) and **Materials** (`kind: :material`). Four M on the card/PDF is a **readout of step data**, not a parallel catalog.
+
+### 8.3 Stand-up (station online demand — engineered here, not managed here)
+Distinct from the machine asset list and from abacus **Mach $** (kit cost roll-up).
+
+| Field | Meaning |
+|---|---|
+| `standup_weeks` | Duration to bring the station online (if full kit) |
+| `standup_people` | Crew demand during stand-up |
+| `standup_source` | `in_house` \| `subcontract` \| `mixed` |
+| `standup_note` | Vendor / scope / dependencies |
+
+- Hangs off the **work cell** (one block per station) for iMod v1.  
+- Product job: specify full-kit stand-up **demand** for owner/designer reports (e.g. “2 ppl × 3 weeks · sub”).  
+- **Not** a stand-up project manager — execution tools come later.  
+- Face: optional micro-line when any field is set. Pencil sheet: Stand-up table + Machine/Material rows projected from steps.
+
 ---
 
 ## 9. Method

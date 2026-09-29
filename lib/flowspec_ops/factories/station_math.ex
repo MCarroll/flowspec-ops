@@ -180,6 +180,14 @@ defmodule FlowspecOps.Factories.StationMath do
         nil
       end
 
+    items =
+      steps
+      |> Enum.flat_map(fn s -> Map.get(s, :items) || [] end)
+      |> Enum.sort_by(& &1.position)
+
+    machine_items = Enum.filter(items, &(&1.kind == :equipment))
+    material_items = Enum.filter(items, &(&1.kind == :material))
+
     %{
       steps: steps,
       step_stats: step_stats,
@@ -198,8 +206,31 @@ defmodule FlowspecOps.Factories.StationMath do
       product_ready: node.product_ready == true,
       method_instruction: node.method_instruction == true,
       gate: node.gate == true,
-      bypass_allowed: node.bypass_allowed == true
+      bypass_allowed: node.bypass_allowed == true,
+      machine_items: machine_items,
+      material_items: material_items,
+      standup_weeks: Map.get(node, :standup_weeks),
+      standup_people: Map.get(node, :standup_people),
+      standup_source: Map.get(node, :standup_source),
+      standup_note: Map.get(node, :standup_note)
     }
+  end
+
+  def standup_source_label(:in_house), do: "In-house"
+  def standup_source_label(:subcontract), do: "Subcontract"
+  def standup_source_label(:mixed), do: "Mixed"
+  def standup_source_label(_), do: "—"
+
+  def format_qty(nil), do: "—"
+  def format_qty(n) when is_integer(n), do: Integer.to_string(n)
+
+  def format_qty(n) when is_float(n) do
+    s =
+      :erlang.float_to_binary(n, decimals: 6)
+      |> String.trim_trailing("0")
+      |> String.trim_trailing(".")
+
+    if s == "" or s == "-0", do: "0", else: s
   end
 
   def format_duration_minutes(m) when is_integer(m) and m > 0 do

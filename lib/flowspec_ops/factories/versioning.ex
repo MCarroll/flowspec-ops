@@ -237,12 +237,14 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
       INSERT INTO factory_version_nodes
         (version_id, source_id, factory_id, line_id, kind, name, position,
          bypass_allowed, note, queue_role, slots, storage_group, crew_size,
+         standup_weeks, standup_people, standup_source, standup_note,
          inspection_point, gate, product_ready, method_instruction, location_note,
          lead_time_days, supply_cadence, setup_days, first_batch_days, first_batch_qty,
          production_batch_slots, transport_duration_minutes, from_location, to_location,
          vendor_name, batch_size, ship_weekday, transit_days, inserted_at, updated_at)
       SELECT $1, id, factory_id, line_id, kind, name, position,
          bypass_allowed, note, queue_role, slots, storage_group, crew_size,
+         standup_weeks, standup_people, standup_source, standup_note,
          inspection_point, gate, product_ready, method_instruction, location_note,
          lead_time_days, supply_cadence, setup_days, first_batch_days, first_batch_qty,
          production_batch_slots, transport_duration_minutes, from_location, to_location,
@@ -449,7 +451,9 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
       Repo.query!(
         """
         SELECT source_id, line_id, kind, name, position, bypass_allowed, note,
-               queue_role, slots, storage_group, crew_size, inspection_point, gate,
+               queue_role, slots, storage_group, crew_size,
+               standup_weeks, standup_people, standup_source, standup_note,
+               inspection_point, gate,
                product_ready, method_instruction, location_note, lead_time_days,
                supply_cadence, setup_days, first_batch_days, first_batch_qty,
                production_batch_slots, transport_duration_minutes, from_location,
@@ -473,6 +477,10 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
         slots,
         storage_group,
         crew_size,
+        standup_weeks,
+        standup_people,
+        standup_source,
+        standup_note,
         inspection_point,
         gate,
         product_ready,
@@ -502,7 +510,9 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
           """
           INSERT INTO factory_nodes
             (factory_id, line_id, kind, name, position, bypass_allowed, note,
-             queue_role, slots, storage_group, crew_size, inspection_point, gate,
+             queue_role, slots, storage_group, crew_size,
+             standup_weeks, standup_people, standup_source, standup_note,
+             inspection_point, gate,
              product_ready, method_instruction, location_note, lead_time_days,
              supply_cadence, setup_days, first_batch_days, first_batch_qty,
              production_batch_slots, transport_duration_minutes, from_location,
@@ -510,7 +520,7 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
              inserted_at, updated_at)
           VALUES
             ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-             $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31)
+             $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
           RETURNING id
           """,
           [
@@ -525,6 +535,10 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
             slots,
             storage_group,
             crew_size,
+            standup_weeks,
+            standup_people,
+            standup_source,
+            standup_note,
             inspection_point || false,
             gate || false,
             product_ready || false,

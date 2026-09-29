@@ -62,6 +62,7 @@ Order is consulting-throughput first (SOHO). Re-rank only with explicit dialog.
 | **P0-soon** | **Card ⋮ guided build** (add feeding / transport / related — not Grasshopper canvas) | Desk net authoring without visual graph editor; legal next moves from each card | Domain create+link verbs; adjacency rules grilled |
 | **P1** | **Four M tables on PDF** (real rows when data exists; zeros when not) | Zeros teach gap; filled rows win acquire/place/contract fight | P0 PDF shell; progressive F-path data |
 | **P1** | **CSV acquisition list** | Purchasing handoff (Roger / Flowspec app later) | Machine/material rows |
+| **P1** | **Stand-up roll-up (line + factory)** | Card stand-up demand lives on work_cell; need Σ weeks/people/source cut for Reed/Roger reports | Card stand-up fields shipped 2026-08-25 |
 | **P2** | **Share / multi-editor surface** (Reader links, others edit) | Schema reserved in P0; **surface is v2** | Versions stable; real demand for second Editor |
 | **P2** | **Mobile card section** | Floor/line lead phone — after desk PDF loop works | Stable card/popup atoms |
 | **Constant** | **CLI-clean domain mutate → later NL/Whisper** | Efficiency for Michael as app stabilizes; not a gated sprint | Every net write goes through domain functions callable from CLI |
@@ -130,6 +131,12 @@ Order is consulting-throughput first (SOHO). Re-rank only with explicit dialog.
 4. No tutorial prose on the page.
 
 **Shipped 2026-08-11:** work_cell + queue (feeding/storage) + storage-group pencil sheets; card ⋮ print. Supplier/transport sheets still open.
+
+**Shipped 2026-08-25 (partial P1 Four M + stand-up):**
+- Step popup labels restored: **Machines** / **Materials** (schema atoms unchanged: equipment/material).
+- Station-level **Stand-up** demand: weeks · people · source · note (twin schema + Versioning).
+- Work-cell pencil: Stand-up table; Four M **Machine** and **Material** project step items (real rows + 1 blank; empty → 3 blanks). Man/Method still shells (covered by Manpower/Steps above).
+- Open: stand-up roll-up at line/factory scope; Man/Method filled rows on Four M if needed.
 
 ### T2.2 — Line + net summary reports (next — grill 2026-08-11)
 

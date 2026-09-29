@@ -11,6 +11,8 @@ defmodule FlowspecOpsWeb.PencilHTML do
   def format_gap(v), do: StationMath.format_gap(v)
   def yes_dash(v), do: StationMath.yes_dash(v)
   def dash_or(v), do: StationMath.dash_or(v)
+  def format_qty(v), do: StationMath.format_qty(v)
+  def standup_source_label(v), do: StationMath.standup_source_label(v)
 
   def version_label(nil), do: "Working copy"
   def version_label(%{name: name}) when is_binary(name) and name != "", do: name
