@@ -9,7 +9,9 @@ defmodule FlowspecOps.Factories do
   alias FlowspecOps.Factories.FactoryNode
   alias FlowspecOps.Factories.FactoryNodeStep
 alias FlowspecOps.Factories.FactoryNodeStepItem
-  alias FlowspecOps.Factories.Versioning
+alias FlowspecOps.Factories.Equipment
+alias FlowspecOps.Factories.BuildOutItem
+alias FlowspecOps.Factories.Versioning
 
   # --- Versions / milestones ---
 
@@ -47,6 +49,12 @@ alias FlowspecOps.Factories.FactoryNodeStepItem
     %FactoryLine{}
     |> FactoryLine.changeset(attrs)
     |> Repo.insert()
+  end
+
+  def update_line(%FactoryLine{} = line, attrs) do
+    line
+    |> FactoryLine.changeset(attrs)
+    |> Repo.update()
   end
 
   # --- SKUs ---
@@ -149,6 +157,38 @@ alias FlowspecOps.Factories.FactoryNodeStepItem
   end
 
   def delete_step(step), do: Repo.delete(step)
+
+  # --- Equipment (actual assets tied to steps) ---
+
+  def create_equipment(attrs) do
+    %Equipment{}
+    |> Equipment.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def update_equipment(equipment, attrs) do
+    equipment
+    |> Equipment.changeset(attrs)
+    |> Repo.update()
+  end
+
+  def delete_equipment(equipment), do: Repo.delete(equipment)
+
+  # --- Build-out items (sunk costs tied to cards) ---
+
+  def create_build_out_item(attrs) do
+    %BuildOutItem{}
+    |> BuildOutItem.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def update_build_out_item(item, attrs) do
+    item
+    |> BuildOutItem.changeset(attrs)
+    |> Repo.update()
+  end
+
+  def delete_build_out_item(item), do: Repo.delete(item)
 
   # --- Step items (equipment / materials) ---
 

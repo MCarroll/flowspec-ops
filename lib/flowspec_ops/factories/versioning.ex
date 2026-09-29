@@ -123,8 +123,6 @@ defmodule FlowspecOps.Factories.Versioning do
           factory_name: v.factory_name,
           factory_slug: v.factory_slug,
           client_id: v.client_id,
-          target_qty: v.target_qty,
-          window_days: v.window_days,
           inserted_at: v.inserted_at
         }
     )
@@ -175,9 +173,9 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
         """
         INSERT INTO factory_versions
           (factory_id, name, note, kind, created_by,
-           factory_name, factory_slug, client_id, target_qty, window_days,
+           factory_name, factory_slug, client_id,
            inserted_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
         RETURNING id
         """,
         [
@@ -189,8 +187,6 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
           factory.name,
           factory.slug,
           factory.client_id,
-          factory.target_qty,
-          factory.window_days,
           now
         ]
       )
@@ -211,8 +207,8 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
     Repo.query!(
       """
       INSERT INTO factory_version_lines
-        (version_id, source_id, factory_id, name, position, inserted_at, updated_at)
-      SELECT $1, id, factory_id, name, position, inserted_at, updated_at
+        (version_id, source_id, factory_id, name, position, target_qty, window_days, inserted_at, updated_at)
+      SELECT $1, id, factory_id, name, position, target_qty, window_days, inserted_at, updated_at
       FROM factory_lines WHERE factory_id = $2
       """,
       [version_id, factory_id]
@@ -338,9 +334,7 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
             factory
             |> Ecto.Changeset.change(%{
               name: version.factory_name,
-              slug: version.factory_slug,
-              target_qty: version.target_qty,
-              window_days: version.window_days
+              slug: version.factory_slug
             })
             |> Repo.update!()
 
@@ -405,20 +399,20 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
     %{rows: rows} =
       Repo.query!(
         """
-        SELECT source_id, name, position, inserted_at, updated_at
+        SELECT source_id, name, position, target_qty, window_days, inserted_at, updated_at
         FROM factory_version_lines WHERE version_id = $1 ORDER BY position, source_id
         """,
         [version_id]
       )
 
-    Enum.reduce(rows, %{}, fn [source_id, name, position, ins, upd], acc ->
+    Enum.reduce(rows, %{}, fn [source_id, name, position, target_qty, window_days, ins, upd], acc ->
       {:ok, %{rows: [[new_id]]}} =
         Repo.query(
           """
-          INSERT INTO factory_lines (factory_id, name, position, inserted_at, updated_at)
-          VALUES ($1,$2,$3,$4,$5) RETURNING id
+          INSERT INTO factory_lines (factory_id, name, position, target_qty, window_days, inserted_at, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id
           """,
-          [factory_id, name, position, ins || now, upd || now]
+          [factory_id, name, position, target_qty, window_days, ins || now, upd || now]
         )
 
       Map.put(acc, source_id, new_id)

@@ -29,6 +29,7 @@ def mount(%{"id" => id}, _session, socket) do
        add_step_node_id: nil,
        add_step_name: "",
        commitment_edit_open: false,
+       commitment_edit_line_id: nil,
        step_edit_id: nil,
        station_edit_id: nil,
        transport_edit_id: nil,
@@ -63,8 +64,8 @@ versions: Factories.list_versions(factory.id),
   end
 
   @impl true
-  def handle_event("open_commitment_edit", _params, socket) do
-    {:noreply, assign(socket, commitment_edit_open: true)}
+  def handle_event("open_commitment_edit", params, socket) do
+    {:noreply, assign(socket, commitment_edit_open: true, commitment_edit_line_id: parse_optional_id(Map.get(params, "line_id")))}
   end
 
   @impl true
@@ -160,17 +161,24 @@ def handle_event("cancel_commitment_edit", _params, socket) do
 
   @impl true
   def handle_event("save_commitment", params, socket) do
-    attrs = %{
-      target_qty: parse_optional_positive_int(Map.get(params, "target_qty")),
-      window_days: parse_optional_positive_int(Map.get(params, "window_days"))
-    }
+    line_id = parse_optional_id(Map.get(params, "line_id"))
+    line = Enum.find(socket.assigns.factory.lines, &(&1.id == line_id))
 
-    case Factories.update_factory(socket.assigns.factory, attrs) do
-      {:ok, _factory} ->
-        {:noreply, reload_factory(socket) |> assign(commitment_edit_open: false)}
+    if line do
+      attrs = %{
+        target_qty: parse_optional_positive_int(Map.get(params, "target_qty")),
+        window_days: parse_optional_positive_int(Map.get(params, "window_days"))
+      }
 
-      {:error, _changeset} ->
-        {:noreply, socket}
+      case Factories.update_line(line, attrs) do
+        {:ok, _line} ->
+          {:noreply, reload_factory(socket) |> assign(commitment_edit_open: false)}
+
+        {:error, _changeset} ->
+          {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
     end
   end
 
@@ -620,7 +628,7 @@ def handle_event("cancel_commitment_edit", _params, socket) do
         restore_confirm_id={@restore_confirm_id}
       />
 
-      <.commitment_header factory={@factory} />
+
 
       <div class="px-0 pt-1">
         <div class="flex items-end gap-2">
@@ -675,7 +683,7 @@ def handle_event("cancel_commitment_edit", _params, socket) do
         <% end %>
       </div>
 
-      <.commitment_edit_modal :if={@commitment_edit_open} factory={@factory} />
+      <.commitment_edit_modal :if={@commitment_edit_open} factory={@factory} commitment_edit_line_id={@commitment_edit_line_id} />
       <.step_edit_modal
         :if={@step_edit_id}
         factory={@factory}
@@ -826,7 +834,7 @@ def handle_event("cancel_commitment_edit", _params, socket) do
 
   defp required_daily_rate(_), do: nil
 
-defp required_weekly_rate(factory), do: StationMath.required_weekly_rate(factory)
+  defp required_weekly_rate(line), do: StationMath.required_weekly_rate(line)
 
   # If setup sits inside the commitment window, productive days shrink.
   defp required_weekly_rate_after_setup(%{target_qty: qty, window_days: window}, setup_days)
@@ -996,18 +1004,18 @@ defp versions_panel(assigns) do
   end
 
   defp commitment_header(assigns) do
-    rate = required_daily_rate(assigns.factory)
+    rate = required_daily_rate(assigns.line)
     assigns = assign(assigns, :required_rate, rate)
 
     ~H"""
-    <div class="sticky top-16 z-20 -mx-1 border border-zinc-200 bg-zinc-50/95 px-2.5 py-1 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
+    <div class="border border-zinc-200 bg-zinc-50/95 px-2.5 py-1 dark:border-zinc-700 dark:bg-zinc-900/95">
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-600 dark:text-zinc-300">
         <span class="font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Commitment</span>
 
         <span class="tabular-nums">
           <span class="text-zinc-400">Target</span>
           <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
-            <%= if @factory.target_qty, do: @factory.target_qty, else: "—" %>
+            <%= if @line.target_qty, do: @line.target_qty, else: "—" %>
           </span>
         </span>
 
@@ -1016,7 +1024,7 @@ defp versions_panel(assigns) do
         <span class="tabular-nums">
           <span class="text-zinc-400">Window</span>
           <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
-            <%= if @factory.window_days, do: "#{@factory.window_days}d", else: "—" %>
+            <%= if @line.window_days, do: "#{@line.window_days}d", else: "—" %>
           </span>
         </span>
 
@@ -1032,6 +1040,7 @@ defp versions_panel(assigns) do
         <button
           type="button"
           phx-click="open_commitment_edit"
+          phx-value-line-id={@line.id}
           class="ml-auto text-[10px] font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
         >
           Edit
@@ -1042,23 +1051,27 @@ defp versions_panel(assigns) do
   end
 
   defp commitment_edit_modal(assigns) do
+    line = Enum.find(assigns.factory.lines, &(&1.id == assigns.commitment_edit_line_id))
+    assigns = assign(assigns, :line, line)
+
     ~H"""
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div class="absolute inset-0 bg-zinc-900/40" phx-click="cancel_commitment_edit"></div>
       <div class="relative w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
         <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Commitment</h3>
         <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-          What this net is designed to satisfy.
+          What this line is designed to satisfy.
         </p>
 
         <form phx-submit="save_commitment" class="mt-3 space-y-3">
+          <input type="hidden" name="line_id" value={@line && @line.id} />
           <label class="block">
             <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Target qty</span>
             <input
               type="number"
               name="target_qty"
               min="1"
-              value={@factory.target_qty}
+              value={@line && @line.target_qty}
               class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
             />
           </label>
@@ -1069,7 +1082,7 @@ defp versions_panel(assigns) do
               type="number"
               name="window_days"
               min="1"
-              value={@factory.window_days}
+              value={@line && @line.window_days}
               class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
             />
           </label>
@@ -1188,6 +1201,7 @@ defp versions_panel(assigns) do
 
     ~H"""
     <div class="space-y-2">
+      <.commitment_header line={@line} />
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
         <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           <%= @line.name %>
