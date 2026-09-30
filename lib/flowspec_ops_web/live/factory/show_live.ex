@@ -1127,11 +1127,16 @@ defp versions_panel(assigns) do
   # --- Project Net ---
 
   defp project_net(assigns) do
+    mpl = Enum.find(assigns.factory.master_production_lines, &(&1.id == assigns.line && assigns.line.master_production_line_id))
+    assigns = assign(assigns, :mpl, mpl)
+
     ~H"""
     <div class="space-y-4">
       <%= if Enum.empty?(@lines) && Enum.empty?(@ungrouped_nodes) do %>
         <p class="text-sm text-zinc-500 dark:text-zinc-400">No nodes yet. Add the first one below.</p>
       <% end %>
+
+      <.commitment_header mpl={@mpl} />
 
       <%= for line <- @lines do %>
         <.line_section
@@ -1226,7 +1231,6 @@ defp versions_panel(assigns) do
 
     ~H"""
     <div class="space-y-2">
-      <.commitment_header mpl={@mpl} />
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
         <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           <%= @line.name %>
