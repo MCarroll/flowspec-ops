@@ -1127,7 +1127,7 @@ defp versions_panel(assigns) do
   # --- Project Net ---
 
   defp project_net(assigns) do
-    mpl = Enum.find(assigns.factory.master_production_lines, &(&1.id == assigns.line && assigns.line.master_production_line_id))
+    mpl = List.first(assigns.factory.master_production_lines)
     assigns = assign(assigns, :mpl, mpl)
 
     ~H"""

@@ -35,7 +35,7 @@ alias FlowspecOps.Factories.Versioning
       links: [:from_node, :to_node],
       master_production_lines: [lines: [nodes: [steps: :items]]],
       lines: [nodes: [steps: :items]],
-      nodes: [steps: :items]
+      nodes: [steps: :items, line: []]
     ])
   end
 

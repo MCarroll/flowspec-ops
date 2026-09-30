@@ -57,6 +57,7 @@ defmodule FlowspecOps.Factories.FactoryNode do
     field :transport_mode, Ecto.Enum, values: [:external, :internal]
 
     # Movement card fields
+    field :duration_minutes, :integer
     field :qty_in_circulation, :integer
     field :trips_per_day, :integer
     field :operator_count, :integer
@@ -84,7 +85,7 @@ defmodule FlowspecOps.Factories.FactoryNode do
       :setup_days, :first_batch_days, :first_batch_qty, :production_batch_slots,
       :transport_duration_minutes, :from_location, :to_location,
       :vendor_name, :batch_size, :ship_weekday, :transit_days, :transport_mode,
-      :qty_in_circulation, :trips_per_day, :operator_count
+      :qty_in_circulation, :trips_per_day, :operator_count, :duration_minutes
     ])
     |> validate_number(:standup_weeks, greater_than: 0)
     |> validate_number(:standup_people, greater_than: 0)
