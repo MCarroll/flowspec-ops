@@ -16,6 +16,8 @@ defmodule FlowspecOps.Factories.Factory do
       preload_order: [asc: :position]
     has_many :links, FlowspecOps.Factories.FactoryLink,
       foreign_key: :factory_id
+    has_many :master_production_lines, FlowspecOps.Factories.MasterProductionLine,
+      foreign_key: :factory_id
     has_many :skus, FlowspecOps.Factories.FactorySku,
       foreign_key: :factory_id
 

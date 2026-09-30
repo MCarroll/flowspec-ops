@@ -65,7 +65,7 @@ versions: Factories.list_versions(factory.id),
 
   @impl true
   def handle_event("open_commitment_edit", params, socket) do
-    {:noreply, assign(socket, commitment_edit_open: true, commitment_edit_line_id: parse_optional_id(Map.get(params, "line_id")))}
+    {:noreply, assign(socket, commitment_edit_open: true, commitment_edit_line_id: parse_optional_id(Map.get(params, "mpl_id")))}
   end
 
   @impl true
@@ -161,17 +161,18 @@ def handle_event("cancel_commitment_edit", _params, socket) do
 
   @impl true
   def handle_event("save_commitment", params, socket) do
-    line_id = parse_optional_id(Map.get(params, "line_id"))
-    line = Enum.find(socket.assigns.factory.lines, &(&1.id == line_id))
+    mpl_id = parse_optional_id(Map.get(params, "mpl_id"))
+    mpl = Enum.find(socket.assigns.factory.master_production_lines, &(&1.id == mpl_id))
 
-    if line do
+    if mpl do
       attrs = %{
         target_qty: parse_optional_positive_int(Map.get(params, "target_qty")),
-        window_days: parse_optional_positive_int(Map.get(params, "window_days"))
+        window_days: parse_optional_positive_int(Map.get(params, "window_days")),
+        start_date: parse_optional_date(Map.get(params, "start_date"))
       }
 
-      case Factories.update_line(line, attrs) do
-        {:ok, _line} ->
+      case Factories.update_master_production_line(mpl, attrs) do
+        {:ok, _mpl} ->
           {:noreply, reload_factory(socket) |> assign(commitment_edit_open: false)}
 
         {:error, _changeset} ->
@@ -731,6 +732,17 @@ def handle_event("cancel_commitment_edit", _params, socket) do
   defp parse_optional_positive_int(n) when is_integer(n) and n > 0, do: n
   defp parse_optional_positive_int(_), do: nil
 
+  defp parse_optional_date(nil), do: nil
+  defp parse_optional_date(""), do: nil
+  defp parse_optional_date(str) when is_binary(str) do
+    case Date.from_iso8601(str) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+  defp parse_optional_date(%Date{} = date), do: date
+  defp parse_optional_date(_), do: nil
+
   defp parse_optional_positive_float(nil), do: nil
   defp parse_optional_positive_float(""), do: nil
 
@@ -889,9 +901,9 @@ def handle_event("cancel_commitment_edit", _params, socket) do
 
 defp format_rate(v), do: StationMath.format_rate(v)
 
-  defp supplier_vs_commitment(factory, node) do
-    need_wk = required_weekly_rate(factory)
-    need_after_setup = required_weekly_rate_after_setup(factory, node.setup_days)
+  defp supplier_vs_commitment(mpl, node) do
+    need_wk = required_weekly_rate(mpl)
+    need_after_setup = required_weekly_rate_after_setup(mpl, node.setup_days)
     have_wk = designed_weekly_rate(node)
 
     gap =
@@ -1004,7 +1016,7 @@ defp versions_panel(assigns) do
   end
 
   defp commitment_header(assigns) do
-    rate = required_daily_rate(assigns.line)
+    rate = required_daily_rate(assigns.mpl)
     assigns = assign(assigns, :required_rate, rate)
 
     ~H"""
@@ -1015,7 +1027,7 @@ defp versions_panel(assigns) do
         <span class="tabular-nums">
           <span class="text-zinc-400">Target</span>
           <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
-            <%= if @line.target_qty, do: @line.target_qty, else: "—" %>
+            <%= if @mpl && @mpl.target_qty, do: @mpl.target_qty, else: "—" %>
           </span>
         </span>
 
@@ -1024,7 +1036,7 @@ defp versions_panel(assigns) do
         <span class="tabular-nums">
           <span class="text-zinc-400">Window</span>
           <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
-            <%= if @line.window_days, do: "#{@line.window_days}d", else: "—" %>
+            <%= if @mpl && @mpl.window_days, do: "#{@mpl.window_days}d", else: "—" %>
           </span>
         </span>
 
@@ -1040,7 +1052,7 @@ defp versions_panel(assigns) do
         <button
           type="button"
           phx-click="open_commitment_edit"
-          phx-value-line-id={@line.id}
+          phx-value-mpl-id={@mpl && @mpl.id}
           class="ml-auto text-[10px] font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
         >
           Edit
@@ -1051,8 +1063,8 @@ defp versions_panel(assigns) do
   end
 
   defp commitment_edit_modal(assigns) do
-    line = Enum.find(assigns.factory.lines, &(&1.id == assigns.commitment_edit_line_id))
-    assigns = assign(assigns, :line, line)
+    mpl = Enum.find(assigns.factory.master_production_lines, &(&1.id == assigns.commitment_edit_line_id))
+    assigns = assign(assigns, :mpl, mpl)
 
     ~H"""
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1060,18 +1072,19 @@ defp versions_panel(assigns) do
       <div class="relative w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
         <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Commitment</h3>
         <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-          What this line is designed to satisfy.
+          What this master production line is designed to satisfy.
         </p>
 
         <form phx-submit="save_commitment" class="mt-3 space-y-3">
-          <input type="hidden" name="line_id" value={@line && @line.id} />
+          <input type="hidden" name="mpl_id" value={@mpl && @mpl.id} />
+
           <label class="block">
             <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Target qty</span>
             <input
               type="number"
               name="target_qty"
               min="1"
-              value={@line && @line.target_qty}
+              value={@mpl && @mpl.target_qty}
               class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
             />
           </label>
@@ -1082,7 +1095,17 @@ defp versions_panel(assigns) do
               type="number"
               name="window_days"
               min="1"
-              value={@line && @line.window_days}
+              value={@mpl && @mpl.window_days}
+              class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+          </label>
+
+          <label class="block">
+            <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Start date</span>
+            <input
+              type="date"
+              name="start_date"
+              value={@mpl && @mpl.start_date}
               class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
             />
           </label>
@@ -1192,16 +1215,18 @@ defp versions_panel(assigns) do
     sorted = Enum.sort_by(assigns.line.nodes, & &1.position)
     display_items = line_display_items(sorted)
     spine = line_spine(sorted, assigns.links || [], assigns.all_nodes || [])
+    mpl = Enum.find(assigns.factory.master_production_lines, &(&1.id == assigns.line.master_production_line_id))
 
     assigns =
       assigns
       |> assign(:sorted_nodes, sorted)
       |> assign(:display_items, display_items)
       |> assign(:spine, spine)
+      |> assign(:mpl, mpl)
 
     ~H"""
     <div class="space-y-2">
-      <.commitment_header line={@line} />
+      <.commitment_header mpl={@mpl} />
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
         <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           <%= @line.name %>
@@ -1465,7 +1490,8 @@ defp node_card(assigns) do
   # --- Kind-specific cards (calijane2-shaped) ---
 
   defp supplier_card(assigns) do
-    vs = supplier_vs_commitment(assigns.factory, assigns.node)
+    mpl = Enum.find(assigns.factory.master_production_lines, &(&1.id == assigns.node.line && assigns.node.line.master_production_line_id))
+    vs = supplier_vs_commitment(mpl, assigns.node)
     assigns = assign(assigns, :vs, vs)
 
     ~H"""
@@ -1737,7 +1763,8 @@ defp node_card(assigns) do
     links = assigns[:links] || []
     factory = assigns[:factory]
     expected_in = expected_weekly_in(assigns.node, links)
-    need_wk = factory && StationMath.required_weekly_rate(factory)
+    mpl = Enum.find(assigns.factory.master_production_lines, &(&1.id == assigns.node.line && assigns.node.line.master_production_line_id))
+    need_wk = mpl && StationMath.required_weekly_rate(mpl)
     avail_label = inbound_avail_label(assigns.node, links)
     crew = crew_designed
     gate? = Map.get(assigns.node, :gate) == true
@@ -2224,7 +2251,8 @@ defp work_cell_card(assigns) do
 links = assigns[:links] || []
     factory = assigns[:factory]
     expected_in = expected_weekly_in(assigns.node, links)
-    need_wk = factory && StationMath.required_weekly_rate(factory)
+    mpl = Enum.find(assigns.factory.master_production_lines, &(&1.id == assigns.node.line && assigns.node.line.master_production_line_id))
+    need_wk = mpl && StationMath.required_weekly_rate(mpl)
     avail_label = inbound_avail_label(assigns.node, links)
     crew = crew_designed
     gate? = Map.get(assigns.node, :gate) == true

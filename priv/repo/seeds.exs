@@ -320,17 +320,26 @@ va_factory =
   insert_factory.(%{
     name: "VA Transitional Housing",
     slug: "va-transitional-housing",
-    client_id: imod.id,
+    client_id: imod.id
+  })
+
+# ── Master Production Line ─────────────────────────────────────────
+mpl =
+  Factories.create_master_production_line!(%{
+    factory_id: va_factory.id,
+    name: "Modular Unit Master Line",
+    description: "Master production line for modular housing units",
     target_qty: 220,
-    window_days: 90
+    window_days: 90,
+    start_date: ~D[2026-10-01]
   })
 
 # ── Lines: parallel supply + plant path ─────────────────────────────
 # Capacity rule: SUM designed rates across Frame MFG A/B; MIN along Frame Line.
 # Receiving is ONE shared join node on Frame Line (never duplicated).
-mfg_line_a = insert_line.(%{factory_id: va_factory.id, name: "Frame MFG A", position: 1})
-mfg_line_b = insert_line.(%{factory_id: va_factory.id, name: "Frame MFG B", position: 2})
-frame_line = insert_line.(%{factory_id: va_factory.id, name: "Frame Line", position: 3})
+mfg_line_a = insert_line.(%{factory_id: va_factory.id, name: "Frame MFG A", position: 1, master_production_line_id: mpl.id})
+mfg_line_b = insert_line.(%{factory_id: va_factory.id, name: "Frame MFG B", position: 2, master_production_line_id: mpl.id})
+frame_line = insert_line.(%{factory_id: va_factory.id, name: "Frame Line", position: 3, master_production_line_id: mpl.id})
 
 # SKUs: two unit variants
 sku_a = insert_sku.(%{factory_id: va_factory.id, code: "SKU-A", name: "Modular Unit — Standard"})

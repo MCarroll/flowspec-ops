@@ -5,10 +5,10 @@ defmodule FlowspecOps.Factories.FactoryLine do
   schema "factory_lines" do
     field :name, :string
     field :position, :integer
-    field :target_qty, :integer
-    field :window_days, :integer
 
     belongs_to :factory, FlowspecOps.Factories.Factory
+    belongs_to :master_production_line, FlowspecOps.Factories.MasterProductionLine,
+      foreign_key: :master_production_line_id
     has_many :nodes, FlowspecOps.Factories.FactoryNode,
       foreign_key: :line_id,
       preload_order: [asc: :position]
@@ -18,7 +18,7 @@ defmodule FlowspecOps.Factories.FactoryLine do
 
   def changeset(line, attrs) do
     line
-    |> cast(attrs, [:factory_id, :name, :position, :target_qty, :window_days])
+    |> cast(attrs, [:factory_id, :name, :position, :master_production_line_id])
     |> validate_required([:factory_id, :name, :position])
     |> unique_constraint([:factory_id, :position])
   end

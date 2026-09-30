@@ -11,6 +11,7 @@ defmodule FlowspecOps.Factories do
 alias FlowspecOps.Factories.FactoryNodeStepItem
 alias FlowspecOps.Factories.Equipment
 alias FlowspecOps.Factories.BuildOutItem
+alias FlowspecOps.Factories.MasterProductionLine
 alias FlowspecOps.Factories.Versioning
 
   # --- Versions / milestones ---
@@ -32,6 +33,7 @@ alias FlowspecOps.Factories.Versioning
       :client,
       :skus,
       links: [:from_node, :to_node],
+      master_production_lines: [lines: [nodes: [steps: :items]]],
       lines: [nodes: [steps: :items]],
       nodes: [steps: :items]
     ])
@@ -55,6 +57,25 @@ alias FlowspecOps.Factories.Versioning
     line
     |> FactoryLine.changeset(attrs)
     |> Repo.update()
+  end
+
+  # --- Master Production Lines ---
+
+  def create_master_production_line(attrs) do
+    %MasterProductionLine{}
+    |> MasterProductionLine.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def update_master_production_line(%MasterProductionLine{} = mpl, attrs) do
+    mpl
+    |> MasterProductionLine.changeset(attrs)
+    |> Repo.update()
+  end
+
+  def get_master_production_line!(id) do
+    Repo.get!(MasterProductionLine, id)
+    |> Repo.preload(:lines)
   end
 
   # --- SKUs ---

@@ -207,8 +207,8 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
     Repo.query!(
       """
       INSERT INTO factory_version_lines
-        (version_id, source_id, factory_id, name, position, target_qty, window_days, inserted_at, updated_at)
-      SELECT $1, id, factory_id, name, position, target_qty, window_days, inserted_at, updated_at
+        (version_id, source_id, factory_id, name, position, master_production_line_id, inserted_at, updated_at)
+      SELECT $1, id, factory_id, name, position, master_production_line_id, inserted_at, updated_at
       FROM factory_lines WHERE factory_id = $2
       """,
       [version_id, factory_id]
@@ -399,20 +399,20 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
     %{rows: rows} =
       Repo.query!(
         """
-        SELECT source_id, name, position, target_qty, window_days, inserted_at, updated_at
+        SELECT source_id, name, position, master_production_line_id, inserted_at, updated_at
         FROM factory_version_lines WHERE version_id = $1 ORDER BY position, source_id
         """,
         [version_id]
       )
 
-    Enum.reduce(rows, %{}, fn [source_id, name, position, target_qty, window_days, ins, upd], acc ->
+    Enum.reduce(rows, %{}, fn [source_id, name, position, mpl_id, ins, upd], acc ->
       {:ok, %{rows: [[new_id]]}} =
         Repo.query(
           """
-          INSERT INTO factory_lines (factory_id, name, position, target_qty, window_days, inserted_at, updated_at)
-          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id
+          INSERT INTO factory_lines (factory_id, name, position, master_production_line_id, inserted_at, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6) RETURNING id
           """,
-          [factory_id, name, position, target_qty, window_days, ins || now, upd || now]
+          [factory_id, name, position, mpl_id, ins || now, upd || now]
         )
 
       Map.put(acc, source_id, new_id)
