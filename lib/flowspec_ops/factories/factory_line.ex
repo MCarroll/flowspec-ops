@@ -5,6 +5,7 @@ defmodule FlowspecOps.Factories.FactoryLine do
   schema "factory_lines" do
     field :name, :string
     field :position, :integer
+    field :location, :string
 
     belongs_to :factory, FlowspecOps.Factories.Factory
     belongs_to :master_production_line, FlowspecOps.Factories.MasterProductionLine,
@@ -18,7 +19,7 @@ defmodule FlowspecOps.Factories.FactoryLine do
 
   def changeset(line, attrs) do
     line
-    |> cast(attrs, [:factory_id, :name, :position, :master_production_line_id])
+    |> cast(attrs, [:factory_id, :name, :position, :master_production_line_id, :location])
     |> validate_required([:factory_id, :name, :position])
     |> unique_constraint([:factory_id, :position])
   end

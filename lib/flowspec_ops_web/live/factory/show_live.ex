@@ -1235,6 +1235,11 @@ defp versions_panel(assigns) do
         <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
           <%= @line.name %>
         </div>
+        <%= if @line.location do %>
+          <span class="rounded border border-zinc-300 bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            <%= @line.location %>
+          </span>
+        <% end %>
         <%= if @spine != [] do %>
           <div class="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-zinc-600 dark:text-zinc-300">
             <%= for {seg, idx} <- Enum.with_index(@spine) do %>
@@ -1508,6 +1513,11 @@ defp node_card(assigns) do
           <h4 class="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
             <%= @node.name %>
           </h4>
+          <%= if @node.location do %>
+            <span class="rounded border border-zinc-300 bg-zinc-100 px-1 py-0.5 text-[9px] font-medium text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+              <%= @node.location %>
+            </span>
+          <% end %>
         </div>
         <div class="py-0.5">
           <%= if @node.location_note do %>
