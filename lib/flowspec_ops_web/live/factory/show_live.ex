@@ -1434,6 +1434,20 @@ defp versions_panel(assigns) do
     """
   end
 
+  defp node_card(%{node: %{kind: :movement}} = assigns) do
+    ~H"""
+    <.movement_card
+      factory={@factory}
+      node={@node}
+      sequence={@sequence}
+      links={@links}
+      add_step_node_id={@add_step_node_id}
+      add_step_name={@add_step_name}
+      card_menu_id={@card_menu_id}
+    />
+    """
+  end
+
 defp node_card(assigns) do
     ~H"""
     <.work_cell_card
@@ -1659,6 +1673,246 @@ defp node_card(assigns) do
                 <%= @node.batch_size %>/wk
               <% true -> %>
                 Transport
+            <% end %>
+          </span>
+          <button type="button" phx-click="delete_node" phx-value-id={@node.id} data-confirm={"Remove #{@node.name}? This cannot be undone."} class="text-zinc-400 hover:text-red-500" title="Remove">×</button>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp movement_card(assigns) do
+    steps = assigns.node.steps || []
+    step_stats = Enum.map(steps, &StationMath.step_stat/1)
+
+    content_total =
+      step_stats
+      |> Enum.map(& &1.content)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.sum()
+      |> case do
+        0 -> 0
+        n -> n
+      end
+
+    {ea_parallel, ea_phased, crew_designed, peak_phase} =
+      StationMath.step_timing_summary(steps, step_stats)
+
+    step_stats = annotate_parallel_rails(steps, step_stats)
+
+    all_items =
+      steps
+      |> Enum.flat_map(fn s -> Map.get(s, :items) || [] end)
+
+    stand_up_cents =
+      all_items
+      |> Enum.map(&FlowspecOps.Factories.FactoryNodeStepItem.stand_up_cents/1)
+      |> Enum.reject(&is_nil/1)
+      |> case do
+        [] -> nil
+        list -> Enum.sum(list)
+      end
+
+    burn_unit_cents =
+      all_items
+      |> Enum.map(&FlowspecOps.Factories.FactoryNodeStepItem.burn_per_unit_cents/1)
+      |> Enum.reject(&is_nil/1)
+      |> case do
+        [] -> nil
+        list -> Enum.sum(list)
+      end
+
+    slots = assigns.node.slots
+
+    burn_batch_cents =
+      cond do
+        is_integer(burn_unit_cents) and is_integer(slots) and slots > 0 ->
+          burn_unit_cents * slots
+
+        true ->
+          nil
+      end
+
+    links = assigns[:links] || []
+    factory = assigns[:factory]
+    expected_in = expected_weekly_in(assigns.node, links)
+    need_wk = factory && StationMath.required_weekly_rate(factory)
+    avail_label = inbound_avail_label(assigns.node, links)
+    crew = crew_designed
+    gate? = Map.get(assigns.node, :gate) == true
+    menu_open? = assigns[:card_menu_id] == "n-#{assigns.node.id}"
+
+    gap =
+      if is_number(expected_in) and is_float(need_wk) do
+        Float.round(need_wk - expected_in * 1.0, 1)
+      else
+        nil
+      end
+
+    batch_cycle_min =
+      cond do
+        is_integer(slots) and slots > 0 and is_integer(ea_parallel) and ea_parallel > 0 ->
+          slots * ea_parallel
+
+        true ->
+          nil
+      end
+
+    {rate_d, rate_w, rate_m} =
+      StationMath.station_dwm_rates(if(ea_parallel > 0, do: ea_parallel, else: nil))
+
+    rate_gap =
+      if is_float(need_wk) and is_float(rate_w) do
+        Float.round(need_wk - rate_w, 1)
+      else
+        nil
+      end
+
+    rate_gap_short? = is_float(rate_gap) and rate_gap > 0
+    intake_short? = is_float(gap) and gap > 0
+
+    status_circle =
+      work_cell_status_circle(steps, content_total, ea_parallel, rate_gap_short? or intake_short?)
+
+    assigns =
+      assigns
+      |> assign(:steps, steps)
+      |> assign(:step_stats, step_stats)
+      |> assign(:ea_parallel, ea_parallel)
+      |> assign(:ea_phased, ea_phased)
+      |> assign(:crew_designed, crew_designed)
+      |> assign(:peak_phase, peak_phase)
+      |> assign(:content_total, content_total)
+      |> assign(:stand_up_cents, stand_up_cents)
+      |> assign(:burn_unit_cents, burn_unit_cents)
+      |> assign(:burn_batch_cents, burn_batch_cents)
+      |> assign(:slots, slots)
+      |> assign(:expected_in, expected_in)
+      |> assign(:need_wk, need_wk)
+      |> assign(:avail_label, avail_label)
+      |> assign(:gap, gap)
+      |> assign(:batch_cycle_min, batch_cycle_min)
+      |> assign(:rate_d, rate_d)
+      |> assign(:rate_w, rate_w)
+      |> assign(:rate_m, rate_m)
+      |> assign(:rate_gap, rate_gap)
+      |> assign(:rate_gap_short?, rate_gap_short?)
+      |> assign(:intake_short?, intake_short?)
+      |> assign(:status_circle, status_circle)
+      |> assign(:gate?, gate?)
+      |> assign(:menu_open?, menu_open?)
+
+    ~H"""
+    <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
+      <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
+        <div class="relative flex items-center gap-2 border-b border-violet-300 bg-violet-100 px-2.5 py-1.5 dark:border-violet-700 dark:bg-violet-900/30">
+          <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-violet-400 text-[10px] font-bold tabular-nums text-violet-800 dark:border-violet-500 dark:text-violet-200">
+            <%= @sequence || @node.position %>
+          </span>
+          <h4 class="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
+            <%= @node.name %>
+          </h4>
+          <div class="relative shrink-0">
+            <button
+              type="button"
+              phx-click="toggle_card_menu"
+              phx-value-id={"n-#{@node.id}"}
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-violet-700 hover:bg-violet-200 hover:text-violet-950 dark:text-violet-200 dark:hover:bg-violet-800"
+              title="Card menu"
+              aria-label="Card menu"
+              aria-expanded={to_string(@menu_open?)}
+            >
+              <span class="text-[14px] leading-none tracking-tighter" aria-hidden="true">⋮</span>
+            </button>
+            <%= if @menu_open? do %>
+              <div
+                class="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800"
+                role="menu"
+              >
+                <button
+                  type="button"
+                  phx-click="open_movement_edit"
+                  phx-value-id={@node.id}
+                  class="block w-full px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                  role="menuitem"
+                >
+                  Edit movement
+                </button>
+                <a
+                  href={~p"/factory/projects/#{@factory.id}/nodes/#{@node.id}/pencil?seq=#{@sequence || @node.position}"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="block px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                  role="menuitem"
+                  data-phx-link="false"
+                >
+                  Print pencil sheet
+                </a>
+              </div>
+            <% end %>
+          </div>
+        </div>
+        <div class="space-y-1 px-2.5 py-1.5 text-[11px] text-zinc-600 dark:text-zinc-300">
+          <div class="tabular-nums">
+            Movement
+            <%= if @node.slots do %>
+              · <%= @node.slots %> slot<%= if @node.slots != 1, do: "s" %>
+            <% end %>
+            <%= if @node.qty_in_circulation do %>
+              · <%= @node.qty_in_circulation %> in circulation
+            <% end %>
+            <%= if @node.trips_per_day do %>
+              · <%= @node.trips_per_day %> trips/d
+            <% end %>
+            <%= if @node.duration_minutes do %>
+              · <%= @node.duration_minutes %> min
+            <% end %>
+            <%= if @node.operator_count do %>
+              · <%= @node.operator_count %> operators
+            <% end %>
+          </div>
+          <%= if @node.from_location || @node.to_location do %>
+            <div class="font-mono text-[10px] text-zinc-500 dark:text-zinc-400">
+              <%= @node.from_location || "?" %> → <%= @node.to_location || "?" %>
+            </div>
+          <% end %>
+          <%= if @node.note do %>
+            <p class="leading-relaxed text-zinc-500 dark:text-zinc-400"><%= @node.note %></p>
+          <% end %>
+        </div>
+        <%= if @steps != [] do %>
+          <div class="border-t border-zinc-200 px-2.5 py-1.5 dark:border-zinc-600">
+            <div class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+              Steps
+            </div>
+            <%= for stat <- @step_stats do %>
+              <% step = stat.step %>
+              <div class="grid grid-cols-[1.5rem_minmax(0,1fr)_2rem] gap-1.5 py-1 text-xs">
+                <span class="mt-0.5 inline-flex size-5 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-bold tabular-nums text-zinc-500 dark:border-zinc-600">
+                  <%= step.position %>
+                </span>
+                <div class="min-w-0">
+                  <div class="truncate font-medium text-zinc-800 dark:text-zinc-100"><%= step.name %></div>
+                  <%= if step.people do %>
+                    <div class="text-[10px] tabular-nums text-zinc-400"><%= step.people %> ppl</div>
+                  <% end %>
+                  <%= for line <- spec_lines(step.specs) do %>
+                    <div class="text-[10px] text-zinc-400"><%= line %></div>
+                  <% end %>
+                </div>
+                <span class="pt-0.5 text-right tabular-nums text-zinc-500">
+                  <%= if stat.content, do: "#{stat.content}m", else: "" %>
+                </span>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
+        <div class="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
+          <span class="tabular-nums">
+            <%= if @node.slots, do: "#{@node.slots} slot/trip", else: "Movement" %>
+            <%= if @node.qty_in_circulation do %>
+              · <%= @node.qty_in_circulation %> carts
             <% end %>
           </span>
           <button type="button" phx-click="delete_node" phx-value-id={@node.id} data-confirm={"Remove #{@node.name}? This cannot be undone."} class="text-zinc-400 hover:text-red-500" title="Remove">×</button>

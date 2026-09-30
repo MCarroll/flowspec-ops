@@ -473,13 +473,45 @@ eps_lot_two =
     location_note: "Remote"
   })
 
+# Movement card: shared tow between EPS lots and Flooring
+eps_tow =
+  insert_node.(%{
+    factory_id: va_factory.id,
+    line_id: frame_line.id,
+    kind: :movement,
+    name: "EPS Tow",
+    position: 4,
+    slots: 1,
+    qty_in_circulation: 2,
+    trips_per_day: 4,
+    duration_minutes: 30,
+    operator_count: 2,
+    from_location: "EPS Lot",
+    to_location: "Flooring"
+  })
+
+insert_step.(%{
+  factory_node_id: eps_tow.id,
+  name: "Pull & Setup",
+  position: 1,
+  people: 2,
+  specs: "+equip Hyster Heavy\n+equip Transfer Wheels"
+})
+
+insert_step.(%{
+  factory_node_id: eps_tow.id,
+  name: "Tow transfer",
+  position: 2,
+  people: 2
+})
+
 flooring =
   insert_node.(%{
     factory_id: va_factory.id,
     line_id: frame_line.id,
     kind: :work_cell,
     name: "Flooring",
-    position: 4,
+    position: 5,
     slots: 3
   })
 
@@ -524,8 +556,9 @@ insert_link.(%{factory_id: va_factory.id, from_node_id: transport_b.id, to_node_
 insert_link.(%{factory_id: va_factory.id, from_node_id: receiving.id, to_node_id: flooring.id, sku_filter: both_skus, label: "slot open"})
 insert_link.(%{factory_id: va_factory.id, from_node_id: receiving.id, to_node_id: eps_lot_one.id, sku_filter: both_skus, label: "overflow"})
 insert_link.(%{factory_id: va_factory.id, from_node_id: receiving.id, to_node_id: eps_lot_two.id, sku_filter: both_skus, label: "overflow"})
-insert_link.(%{factory_id: va_factory.id, from_node_id: eps_lot_one.id, to_node_id: flooring.id, sku_filter: both_skus})
-insert_link.(%{factory_id: va_factory.id, from_node_id: eps_lot_two.id, to_node_id: flooring.id, sku_filter: both_skus})
+insert_link.(%{factory_id: va_factory.id, from_node_id: eps_lot_one.id, to_node_id: eps_tow.id, sku_filter: both_skus})
+insert_link.(%{factory_id: va_factory.id, from_node_id: eps_lot_two.id, to_node_id: eps_tow.id, sku_filter: both_skus})
+insert_link.(%{factory_id: va_factory.id, from_node_id: eps_tow.id, to_node_id: flooring.id, sku_filter: both_skus})
 insert_link.(%{factory_id: va_factory.id, from_node_id: flooring.id, to_node_id: ceiling.id, sku_filter: both_skus})
 insert_link.(%{factory_id: va_factory.id, from_node_id: flooring.id, to_node_id: s3_node.id, label: "SKU-B side path"})
 insert_link.(%{factory_id: va_factory.id, from_node_id: ceiling.id, to_node_id: walls.id, sku_filter: both_skus})
