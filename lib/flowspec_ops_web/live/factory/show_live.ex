@@ -2,8 +2,9 @@ defmodule FlowspecOpsWeb.Factory.ShowLive do
   use FlowspecOpsWeb, :live_view
 
 alias FlowspecOps.Factories
-  alias FlowspecOps.Factories.FactoryNodeStep
-  alias FlowspecOps.Factories.StationMath
+alias FlowspecOps.Factories.FactoryNodeStep
+alias FlowspecOps.Factories.StationMath
+alias FlowspecOps.SDBR
 
   @tabs [
     {"Project Net", "net"},
@@ -28,6 +29,8 @@ def mount(%{"id" => id}, _session, socket) do
        add_node_line_id: nil,
        add_step_node_id: nil,
        add_step_name: "",
+       scroll_to_node_id: nil,
+       sdbr_expanded: false,
        commitment_edit_open: false,
        commitment_edit_line_id: nil,
        step_edit_id: nil,
@@ -37,8 +40,9 @@ versions: Factories.list_versions(factory.id),
        versions_open: false,
        save_version_open: false,
        restore_confirm_id: nil,
-       card_menu_id: nil
-     )}
+       card_menu_id: nil,
+       lines: factory.lines
+     )}\
   end
 
 @impl true
@@ -61,6 +65,16 @@ versions: Factories.list_versions(factory.id),
   @impl true
   def handle_event("close_card_menu", _params, socket) do
     {:noreply, assign(socket, card_menu_id: nil)}
+  end
+
+  @impl true
+  def handle_event("scroll_to_node", %{"node-id" => node_id}, socket) do
+    {:noreply, push_event(socket, "scroll_to_node", %{node_id: node_id})}
+  end
+
+  @impl true
+  def handle_event("toggle_sdbr", _params, socket) do
+    {:noreply, assign(socket, sdbr_expanded: !socket.assigns[:sdbr_expanded])}
   end
 
   @impl true
@@ -674,6 +688,8 @@ def handle_event("cancel_commitment_edit", _params, socket) do
               add_step_node_id={@add_step_node_id}
               add_step_name={@add_step_name}
               card_menu_id={@card_menu_id}
+              scroll_to_node_id={@scroll_to_node_id}
+              sdbr_expanded={@sdbr_expanded}
             />
           <% "build" -> %>
             <p class="text-sm text-zinc-500 dark:text-zinc-400">Build assignments will render here.</p>
@@ -1016,50 +1032,277 @@ defp versions_panel(assigns) do
   end
 
   defp commitment_header(assigns) do
-    rate = required_daily_rate(assigns.mpl)
+    mpl = assigns.mpl
+    rate = required_daily_rate(mpl)
     assigns = assign(assigns, :required_rate, rate)
 
+    # Build S-DBR model from mpl data
+    sdbr = build_sdbr_model(mpl, assigns.factory)
+    assigns = assign(assigns, :sdbr, sdbr)
+    assigns = assign(assigns, :sdbr_expanded, assigns[:sdbr_expanded] || false)
+
     ~H"""
-    <div class="border border-zinc-200 bg-zinc-50/95 px-2.5 py-1 dark:border-zinc-700 dark:bg-zinc-900/95">
-      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-600 dark:text-zinc-300">
-        <span class="font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Commitment</span>
-
-        <span class="tabular-nums">
-          <span class="text-zinc-400">Target</span>
-          <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
-            <%= if @mpl && @mpl.target_qty, do: @mpl.target_qty, else: "—" %>
+    <div class="border border-zinc-200 bg-zinc-50/95 dark:border-zinc-700 dark:bg-zinc-900/95">
+      <!-- Compact 2-line display -->
+      <div class="px-2.5 py-1">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-600 dark:text-zinc-300">
+          <span class="font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">Commitment</span>
+          <span class="tabular-nums">
+            <span class="text-zinc-400">Target</span>
+            <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
+              <%= if @mpl && @mpl.target_qty, do: @mpl.target_qty, else: "—" %>
+            </span>
           </span>
-        </span>
-
-        <span class="text-zinc-300 dark:text-zinc-600">·</span>
-
-        <span class="tabular-nums">
-          <span class="text-zinc-400">Window</span>
-          <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
-            <%= if @mpl && @mpl.window_days, do: "#{@mpl.window_days}d", else: "—" %>
+          <span class="text-zinc-300 dark:text-zinc-600">·</span>
+          <span class="tabular-nums">
+            <span class="text-zinc-400">Window</span>
+            <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
+              <%= if @mpl && @mpl.window_days, do: "#{@mpl.window_days}d", else: "—" %>
+            </span>
           </span>
-        </span>
-
-        <span class="text-zinc-300 dark:text-zinc-600">·</span>
-
-        <span class="tabular-nums">
-          <span class="text-zinc-400">Need</span>
-          <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
-            <%= if @required_rate, do: "#{@required_rate}/d", else: "—" %>
+          <span class="text-zinc-300 dark:text-zinc-600">·</span>
+          <span class="tabular-nums">
+            <span class="text-zinc-400">Need</span>
+            <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
+              <%= if @required_rate, do: "#{@required_rate}/d", else: "—" %>
+            </span>
           </span>
-        </span>
+          <button
+            type="button"
+            phx-click="toggle_sdbr"
+            class="ml-auto text-[10px] font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+          >
+            <%= if @sdbr_expanded, do: "[-]", else: "[+]" %>
+          </button>
+        </div>
 
-        <button
-          type="button"
-          phx-click="open_commitment_edit"
-          phx-value-mpl-id={@mpl && @mpl.id}
-          class="ml-auto text-[10px] font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
-        >
-          Edit
-        </button>
+        <!-- S-DBR compact line -->
+        <%= if @sdbr do %>
+          <div class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-600 dark:text-zinc-300">
+            <span class="font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">S-DBR</span>
+            <span class="tabular-nums">
+              <span class="text-zinc-400">T</span>
+              <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
+                $<%= format_money_cents(round(@sdbr.annual_throughput * 100)) %>/y
+              </span>
+            </span>
+            <span class="text-zinc-300 dark:text-zinc-600">·</span>
+            <span class="tabular-nums">
+              <span class="text-zinc-400">NP</span>
+              <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
+                $<%= format_money_cents(round(@sdbr.annual_net_profit * 100)) %>/y
+              </span>
+            </span>
+            <span class="text-zinc-300 dark:text-zinc-600">·</span>
+            <span class="tabular-nums">
+              <span class="text-zinc-400">ROI</span>
+              <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
+                <%= Float.round(@sdbr.roi_percent, 1) %>%
+              </span>
+            </span>
+            <span class="text-zinc-300 dark:text-zinc-600">·</span>
+            <span class="tabular-nums">
+              <span class="text-zinc-400">Payback</span>
+              <span class="ml-1 font-semibold text-zinc-800 dark:text-zinc-100">
+                <%= @sdbr.payback_period_months %>mo
+              </span>
+            </span>
+          </div>
+        <% end %>
       </div>
+
+      <!-- Expanded S-DBR detail -->
+      <%= if @sdbr_expanded do %>
+        <div class="border-t border-zinc-200 px-2.5 py-2 dark:border-zinc-700">
+          <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-3">
+            <div class="flex justify-between">
+              <span class="text-zinc-400">Price</span>
+              <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                <%= if @mpl && @mpl.selling_price, do: "$#{@mpl.selling_price}", else: "—" %>
+              </span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-zinc-400">TVC</span>
+              <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                <%= if @sdbr && @sdbr.tvc_per_unit, do: "$#{Float.round(@sdbr.tvc_per_unit, 2)}", else: "—" %>
+              </span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-zinc-400">OE/mo</span>
+              <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                <%= if @mpl && @mpl.monthly_oe, do: "$#{@mpl.monthly_oe}", else: "—" %>
+              </span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-zinc-400">CapEx</span>
+              <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                <%= if @mpl && @mpl.equipment_capex, do: "$#{@mpl.equipment_capex}", else: "—" %>
+              </span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-zinc-400">Op sec/d</span>
+              <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                <%= if @mpl && @mpl.operating_seconds_per_day, do: @mpl.operating_seconds_per_day, else: "—" %>
+              </span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-zinc-400">Op d/y</span>
+              <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                <%= if @mpl && @mpl.operating_days_per_year, do: @mpl.operating_days_per_year, else: "—" %>
+              </span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-zinc-400">Var</span>
+              <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                <%= if @mpl && @mpl.market_variability_factor, do: "#{round(@mpl.market_variability_factor * 100)}%", else: "—" %>
+              </span>
+            </div>
+          </div>
+
+          <%= if @sdbr do %>
+            <div class="mt-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
+              <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] sm:grid-cols-4">
+                <div class="flex justify-between">
+                  <span class="text-zinc-400">T/unit</span>
+                  <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                    $<%= Float.round(@sdbr.unit_throughput, 2) %>
+                  </span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-zinc-400">Takt</span>
+                  <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                    <%= Float.round(@sdbr.takt_time, 1) %>s
+                  </span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-zinc-400">RT</span>
+                  <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                    <%= round(@sdbr.replenishment_time) %>d
+                  </span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-zinc-400">Buffer</span>
+                  <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                    <%= @sdbr.target_shipping_buffer_units %>
+                  </span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-zinc-400">I</span>
+                  <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                    $<%= format_money_cents(round(@sdbr.total_capital_request * 100)) %>
+                  </span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-zinc-400">WC</span>
+                  <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                    $<%= format_money_cents(round(@sdbr.working_capital_inventory * 100)) %>
+                  </span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-zinc-400">NP/y</span>
+                  <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                    $<%= format_money_cents(round(@sdbr.annual_net_profit * 100)) %>
+                  </span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-zinc-400">ROI</span>
+                  <span class="tabular-nums font-medium text-zinc-800 dark:text-zinc-100">
+                    <%= Float.round(@sdbr.roi_percent, 1) %>%
+                  </span>
+                </div>
+              </div>
+            </div>
+          <% end %>
+
+          <div class="mt-2 flex justify-end">
+            <button
+              type="button"
+              phx-click="open_commitment_edit"
+              phx-value-mpl-id={@mpl && @mpl.id}
+              class="text-[10px] font-medium text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"
+            >
+              Edit
+            </button>
+          </div>
+        </div>
+      <% end %>
     </div>
     """
+  end
+
+  defp build_sdbr_model(nil, _factory), do: nil
+  defp build_sdbr_model(mpl, factory) do
+    # Get TVC from factory parts
+    tvc = calculate_tvc(factory)
+
+    # Get supplier lead time from supplier card
+    supplier_lt = get_supplier_lead_time(factory)
+
+    # Get internal cycle time from cards
+    internal_lt = get_internal_cycle_time(factory)
+
+    # Build S-DBR model with available data
+    params = [
+      daily_demand: if(mpl.target_qty && mpl.window_days, do: mpl.target_qty / mpl.window_days, else: nil),
+      selling_price: if(mpl.selling_price, do: Decimal.to_float(mpl.selling_price), else: nil),
+      tvc_per_unit: tvc,
+      supplier_lead_days: supplier_lt,
+      internal_cycle_days: internal_lt,
+      equipment_capex: if(mpl.equipment_capex, do: Decimal.to_float(mpl.equipment_capex), else: nil),
+      monthly_oe: if(mpl.monthly_oe, do: Decimal.to_float(mpl.monthly_oe), else: nil),
+      operating_seconds_per_day: mpl.operating_seconds_per_day,
+      operating_days_per_year: mpl.operating_days_per_year,
+      market_variability_factor: if(mpl.market_variability_factor, do: Decimal.to_float(mpl.market_variability_factor), else: nil)
+    ]
+
+    # Only build if we have minimum required data
+    if params[:daily_demand] && params[:selling_price] && params[:tvc_per_unit] && params[:equipment_capex] && params[:monthly_oe] do
+      struct(SDBR, params)
+    else
+      nil
+    end
+  end
+
+  defp calculate_tvc(factory) do
+    factory.nodes
+    |> Enum.filter(& &1.part_id)
+    |> Enum.map(fn node ->
+      if node.part, do: node.part.unit_cost_cents / 100, else: 0
+    end)
+    |> Enum.sum()
+    |> case do
+      0 -> nil
+      sum -> Float.round(sum, 2)
+    end
+  end
+
+  defp get_supplier_lead_time(factory) do
+    factory.nodes
+    |> Enum.filter(& &1.kind == :supplier)
+    |> Enum.map(& &1.lead_time_days)
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> nil
+      [lt | _] -> lt
+    end
+  end
+
+  defp get_internal_cycle_time(factory) do
+    # Sum of all card cycle times in seconds, converted to days
+    total_seconds =
+      factory.nodes
+      |> Enum.flat_map(& &1.steps)
+      |> Enum.map(& &1.estimated_minutes)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.sum()
+      |> Kernel.*(60)
+
+    if total_seconds > 0 do
+      # Assume 8-hour operating day
+      total_seconds / 28800
+    else
+      nil
+    end
   end
 
   defp commitment_edit_modal(assigns) do
@@ -1136,7 +1379,7 @@ defp versions_panel(assigns) do
         <p class="text-sm text-zinc-500 dark:text-zinc-400">No nodes yet. Add the first one below.</p>
       <% end %>
 
-      <.commitment_header mpl={@mpl} />
+      <.commitment_header mpl={@mpl} factory={@factory} sdbr_expanded={assigns[:sdbr_expanded]} />
 
       <%= for line <- @lines do %>
         <.line_section
@@ -1147,6 +1390,7 @@ defp versions_panel(assigns) do
           add_step_node_id={@add_step_node_id}
           add_step_name={@add_step_name}
           card_menu_id={@card_menu_id}
+          scroll_to_node_id={@scroll_to_node_id}
         />
       <% end %>
 
@@ -1246,26 +1490,31 @@ defp versions_panel(assigns) do
               <%= if idx > 0 do %>
                 <span class="text-zinc-300 dark:text-zinc-600">→</span>
               <% end %>
-              <span class={
-                [
-                  "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-medium tabular-nums",
-                  seg.jump &&
-                    "border-dashed border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200",
-                  !seg.jump &&
-                    "border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-800"
-                ]
-              }>
+              <button
+                type="button"
+                phx-click="scroll_to_node"
+                phx-value-node-id={seg.id}
+                class={
+                  [
+                    "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-medium tabular-nums cursor-pointer hover:opacity-80",
+                    seg.jump &&
+                      "border-dashed border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200",
+                    !seg.jump &&
+                      "border-zinc-200 bg-white dark:border-zinc-600 dark:bg-zinc-800"
+                  ]
+                }
+              >
                 <span class="max-w-[9rem] truncate"><%= seg.name %></span>
                 <%= if seg.mark do %>
                   <span class="text-[10px] font-semibold text-amber-700 dark:text-amber-300"><%= seg.mark %></span>
                 <% end %>
-              </span>
+              </button>
             <% end %>
           </div>
         <% end %>
       </div>
 
-      <div class="flex flex-wrap items-start gap-4">
+      <div class="flex flex-nowrap items-start gap-4 overflow-x-auto pb-2">
         <%= for {item, seq} <- Enum.with_index(@display_items, 1) do %>
           <%= case item do %>
             <% {:group, name, members} -> %>
@@ -1287,6 +1536,7 @@ defp versions_panel(assigns) do
                 add_step_node_id={@add_step_node_id}
                 add_step_name={@add_step_name}
                 card_menu_id={@card_menu_id}
+                scroll_to_node_id={@scroll_to_node_id}
               />
           <% end %>
         <% end %>
@@ -1446,13 +1696,13 @@ defp versions_panel(assigns) do
   # Pattern-matched dispatch by node kind
   defp node_card(%{node: %{kind: :supplier}} = assigns) do
     ~H"""
-    <.supplier_card factory={@factory} node={@node} sequence={@sequence} />
+    <.supplier_card factory={@factory} node={@node} sequence={@sequence} scroll_to_node_id={@scroll_to_node_id} />
     """
   end
 
   defp node_card(%{node: %{kind: :transport}} = assigns) do
     ~H"""
-    <.transport_card node={@node} sequence={@sequence} />
+    <.transport_card node={@node} sequence={@sequence} scroll_to_node_id={@scroll_to_node_id} />
     """
   end
 
@@ -1464,6 +1714,7 @@ defp versions_panel(assigns) do
       sequence={@sequence}
       links={@links}
       card_menu_id={@card_menu_id}
+      scroll_to_node_id={@scroll_to_node_id}
     />
     """
   end
@@ -1478,6 +1729,7 @@ defp versions_panel(assigns) do
       add_step_node_id={@add_step_node_id}
       add_step_name={@add_step_name}
       card_menu_id={@card_menu_id}
+      scroll_to_node_id={@scroll_to_node_id}
     />
     """
   end
@@ -1492,6 +1744,7 @@ defp node_card(assigns) do
       add_step_node_id={@add_step_node_id}
       add_step_name={@add_step_name}
       card_menu_id={@card_menu_id}
+      scroll_to_node_id={@scroll_to_node_id}
     />
     """
   end
@@ -1504,7 +1757,7 @@ defp node_card(assigns) do
     assigns = assign(assigns, :vs, vs)
 
     ~H"""
-    <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
+    <div class="w-[18rem] md:w-[18.5rem] shrink-0">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
         <div class="flex items-center gap-2 border-b border-green-300 bg-green-100 px-2.5 py-1.5 dark:border-green-700 dark:bg-green-900/30">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-green-400 text-[10px] font-bold tabular-nums text-green-800 dark:border-green-500 dark:text-green-200">
@@ -1523,6 +1776,18 @@ defp node_card(assigns) do
           <%= if @node.location_note do %>
             <div class="px-2.5 py-1 text-[11px] text-zinc-500 dark:text-zinc-400"><%= @node.location_note %></div>
           <% end %>
+
+          <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
+            Input
+          </div>
+          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
+            <span class="text-zinc-500 dark:text-zinc-400">Vendor</span>
+            <span class="text-right"><%= @node.vendor_name || (@node.vendor && @node.vendor.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Part</span>
+            <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Batch</span>
+            <span class="text-right"><%= if @node.batch_size, do: "#{@node.batch_size} lbs", else: "—" %></span>
+          </div>
 
           <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
             Setup
@@ -1657,7 +1922,7 @@ defp node_card(assigns) do
       |> assign(:transit_label, transit_label)
 
     ~H"""
-    <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
+    <div class="w-[18rem] md:w-[18.5rem] shrink-0">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
         <div class="flex items-center gap-2 border-b border-amber-300 bg-amber-100 px-2.5 py-1.5 dark:border-amber-700 dark:bg-amber-900/30">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-amber-400 text-[10px] font-bold tabular-nums text-amber-800 dark:border-amber-500 dark:text-amber-200">
@@ -1680,6 +1945,18 @@ defp node_card(assigns) do
               <%= @node.vendor_name %>
             </div>
           <% end %>
+
+          <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
+            Input
+          </div>
+          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
+            <span class="text-zinc-500 dark:text-zinc-400">Vendor</span>
+            <span class="text-right"><%= @node.vendor_name || (@node.vendor && @node.vendor.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Part</span>
+            <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Batch</span>
+            <span class="text-right"><%= if @node.batch_size, do: "#{@node.batch_size} lbs", else: "—" %></span>
+          </div>
 
           <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
             Schedule
@@ -1845,7 +2122,7 @@ defp node_card(assigns) do
       |> assign(:menu_open?, menu_open?)
 
     ~H"""
-    <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
+    <div class="w-[18rem] md:w-[18.5rem] shrink-0">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
         <div class="relative flex items-center gap-2 border-b border-violet-300 bg-violet-100 px-2.5 py-1.5 dark:border-violet-700 dark:bg-violet-900/30">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-violet-400 text-[10px] font-bold tabular-nums text-violet-800 dark:border-violet-500 dark:text-violet-200">
@@ -1895,6 +2172,17 @@ defp node_card(assigns) do
           </div>
         </div>
         <div class="space-y-1 px-2.5 py-1.5 text-[11px] text-zinc-600 dark:text-zinc-300">
+          <div class="border-b border-dashed border-zinc-200 pb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
+            Input
+          </div>
+          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 py-1">
+            <span class="text-zinc-500 dark:text-zinc-400">Vendor</span>
+            <span class="text-right"><%= @node.vendor_name || (@node.vendor && @node.vendor.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Part</span>
+            <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Batch</span>
+            <span class="text-right"><%= if @node.batch_size, do: "#{@node.batch_size} lbs", else: "—" %></span>
+          </div>
           <div class="tabular-nums">
             Movement
             <%= if @node.slots do %>
@@ -2013,7 +2301,7 @@ defp node_card(assigns) do
       |> assign(:pencil_href, pencil_href)
 
     ~H"""
-    <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
+    <div class="w-[18rem] md:w-[18.5rem] shrink-0">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-600 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
         <div class="relative flex items-center gap-2 border-b border-sky-400/80 bg-sky-950 px-2.5 py-1.5 text-sky-50 dark:border-sky-600 dark:bg-sky-950">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sky-300 text-[10px] font-bold tabular-nums text-sky-100">
@@ -2058,6 +2346,12 @@ defp node_card(assigns) do
         </div>
 
         <div class="divide-y divide-zinc-700/80 bg-zinc-900 text-zinc-100">
+          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 px-2.5 py-1.5 text-[11px]">
+            <div class="font-medium text-zinc-200">Input</div>
+            <div class="tabular-nums text-right text-zinc-300">
+              <%= @node.vendor_name || (@node.vendor && @node.vendor.name) || "—" %> → <%= (@node.part && @node.part.name) || "—" %>
+            </div>
+          </div>
           <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 px-2.5 py-1.5 text-[11px]">
             <div class="font-medium text-zinc-200">Passthrough</div>
             <div class="tabular-nums text-right text-zinc-300">
@@ -2143,7 +2437,7 @@ defp node_card(assigns) do
       |> assign(:pencil_href, pencil_href)
 
     ~H"""
-    <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
+    <div class="w-[18rem] md:w-[18.5rem] shrink-0">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
         <div class="relative flex items-center gap-2 border-b border-sky-300 bg-sky-100 px-2.5 py-1.5 dark:border-sky-700 dark:bg-sky-900/30">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-sky-400 text-[10px] font-bold tabular-nums text-sky-800 dark:border-sky-500 dark:text-sky-200">
@@ -2184,6 +2478,17 @@ defp node_card(assigns) do
           </div>
         </div>
         <div class="space-y-1 px-2.5 py-1.5 text-[11px] text-zinc-600 dark:text-zinc-300">
+          <div class="border-b border-dashed border-zinc-200 pb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
+            Input
+          </div>
+          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 py-1">
+            <span class="text-zinc-500 dark:text-zinc-400">Vendor</span>
+            <span class="text-right"><%= @node.vendor_name || (@node.vendor && @node.vendor.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Part</span>
+            <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Batch</span>
+            <span class="text-right"><%= if @node.batch_size, do: "#{@node.batch_size} lbs", else: "—" %></span>
+          </div>
           <div class="tabular-nums">
             <%= @role_label %>
             <%= if @node.slots do %>
@@ -2342,7 +2647,7 @@ links = assigns[:links] || []
       )
 
     ~H"""
-    <div class="w-full sm:w-[18rem] md:w-[18.5rem]">
+    <div class="w-[18rem] md:w-[18.5rem] shrink-0">
       <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
         <div class="relative flex items-center gap-2 border-b border-zinc-300 bg-zinc-100 px-2.5 py-1.5 dark:border-zinc-500 dark:bg-zinc-700">
           <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-400 text-[10px] font-bold tabular-nums text-zinc-900 dark:border-zinc-400 dark:text-zinc-100">
@@ -2480,6 +2785,17 @@ links = assigns[:links] || []
         <% end %>
 
         <div class="py-0.5">
+          <div class="border-b border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
+            Input
+          </div>
+          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
+            <span class="text-zinc-500 dark:text-zinc-400">Vendor</span>
+            <span class="text-right"><%= @node.vendor_name || (@node.vendor && @node.vendor.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Part</span>
+            <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Batch</span>
+            <span class="text-right"><%= if @node.batch_size, do: "#{@node.batch_size} lbs", else: "—" %></span>
+          </div>
           <%= for stat <- @step_stats do %>
             <% step = stat.step %>
             <button

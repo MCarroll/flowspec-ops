@@ -45,6 +45,21 @@ topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
+// Scroll to a specific node card when spine segment is clicked
+window.addEventListener("phx:scroll_to_node", (event) => {
+  const nodeId = event.detail.node_id
+  const card = document.querySelector(`[data-node-id="${nodeId}"]`)
+  if (card) {
+    const container = card.closest(".overflow-x-auto")
+    if (container) {
+      const cardRect = card.getBoundingClientRect()
+      const containerRect = container.getBoundingClientRect()
+      const scrollLeft = card.offsetLeft - container.offsetLeft - (containerRect.width / 2) + (cardRect.width / 2)
+      container.scrollTo({ left: scrollLeft, behavior: "smooth" })
+    }
+  }
+})
+
 // connect if there are any LiveViews on the page
 liveSocket.connect()
 

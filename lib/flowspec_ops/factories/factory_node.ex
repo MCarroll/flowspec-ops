@@ -62,6 +62,10 @@ defmodule FlowspecOps.Factories.FactoryNode do
     field :trips_per_day, :integer
     field :operator_count, :integer
 
+    # Supplier/part selection (standard input on all cards)
+    belongs_to :vendor, FlowspecOps.Vendors.Vendor
+    belongs_to :part, FlowspecOps.Parts.Part
+
     belongs_to :factory, FlowspecOps.Factories.Factory
     belongs_to :line, FlowspecOps.Factories.FactoryLine
     has_many :steps, FlowspecOps.Factories.FactoryNodeStep,
@@ -85,7 +89,8 @@ defmodule FlowspecOps.Factories.FactoryNode do
       :setup_days, :first_batch_days, :first_batch_qty, :production_batch_slots,
       :transport_duration_minutes, :from_location, :to_location,
       :vendor_name, :batch_size, :ship_weekday, :transit_days, :transport_mode,
-      :qty_in_circulation, :trips_per_day, :operator_count, :duration_minutes
+      :qty_in_circulation, :trips_per_day, :operator_count, :duration_minutes,
+      :vendor_id, :part_id
     ])
     |> validate_number(:standup_weeks, greater_than: 0)
     |> validate_number(:standup_people, greater_than: 0)

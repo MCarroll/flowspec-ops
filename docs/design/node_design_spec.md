@@ -687,7 +687,258 @@ Not batch cycle (slots × cycle). Batch cycle is bay/wave time; D/W/M is unit th
 - [ ] Optional multi-shift / OT calendars
 - [ ] Andon orange/green vs Need using D/W/M
 - [ ] PDF staff × rate roll-up using same productive day
+- [ ] Setup / batch / shared-resource work — see §21
 
 ---
 
-*End of draft v1 + session notes + Phase 0 closed + Phase 1 claims + §20 workday/DWM.*
+## 21. Setup, batch, and shared resources (working table)
+
+**Status:** Working notes, session 2026-10-01. Vocabulary and accounting agreed;
+**nothing built.** Read this before touching `batch_cycle_min` or adding any setup field.
+
+### 21.1 VSM terms → this model
+
+| VSM term | Meaning | Here |
+|---|---|---|
+| **C/T** | touch time per unit at a step | `ea_parallel` (Σ parallel step streams). Per unit — never × slots. |
+| **C/O** | recurring loss to switch what the step makes | a **setup step**. Once per batch, never × slots. |
+| **Uptime** | share of scheduled time the step can run | not modeled — §20.4 |
+| **Shifts** | staffing calendar | not modeled — §20.4 |
+| **Available time** | net time at the step | `@standard_productive_min` = **360** min (the VSM box's 450 is a different deduction) |
+
+C/O is **not** shift change. Shift change is the calendar + availability loss. C/O is
+reconfiguration: fixture swap, mold change, purge, first-article check, rig/unrig.
+
+### 21.2 Two setups — never conflate
+
+| | One-time | Recurring |
+|---|---|---|
+| Name | workstation implementation / build-out / ramp-up | **C/O**, changeover, setup |
+| Question | "how fast can we turn up this factory and be full kit?" | "what does it cost to switch what we make?" |
+| Recurs | no — once per station | yes — every run / changeover |
+| Lives now at | `build_out_items` (capex/opex, date), `standup_weeks/people/source`, supplier `setup_days` | **nowhere** |
+| VSM term | none (VSM assumes the station exists) | C/O |
+
+**Naming warning:** supplier `setup_days` is the ONE-TIME kind. Recurring C/O must not
+reuse the word "setup" if it ever becomes a field.
+
+### 21.3 Where each quantity lives, by card type
+
+| Card type | Where on card | C/T (touch) | C/O (recurring) | Batch size | Transfer size | One-time build-out |
+|---|---|---|---|---|---|---|
+| **work_cell** | step rows (`factory_node_steps`) | `ea_parallel` from steps; `people` + `shared` set process time | setup-flagged step | `slots` (capacity) | §17.4 process vs transfer batch | `build_out_items`, `standup_*` |
+| **movement** | card scalars: `duration_minutes`, `slots`, `trips_per_day`, `operator_count` | `duration_minutes` — the lift | rig/unrig step, if torn down per run | `slots` = frames in the run | **min(crane capacity, downstream slots)** | `build_out_items` |
+| **queue / storage_lot / feeding_buffer** | `slots`, `storage_group` | none — holds, does not transform | none | n/a (capacity, not batch) | n/a | `build_out_items` |
+| **supplier** | `lead_time_days`, `setup_days`, `first_batch_*`, `production_batch_slots`, `supply_cadence` | — | — | `first_batch_qty` / `production_batch_slots` | shipment | `setup_days` = lead-in, **not** C/O |
+| **transport** | `transport_duration_minutes`, `batch_size`, `ship_weekday`, `transit_days` | elapsed transit (not touch) | none | `batch_size` | `batch_size` | — |
+
+### 21.4 What scales by slots — and what does not
+
+**Rule: only touch and transfer multiply by the batch count. Setup and wait do not.**
+
+| Quantity | Formula | × slots? |
+|---|---|---|
+| C/T per unit | `ea_parallel` | no — it is per unit |
+| C/O | setup step time | **no — once per batch** |
+| Transfer time | `trips × touch_per_trip` | yes — via trips |
+| **Batch cycle** | **`C/O + slots × Ea`** | mixed |
+| D / W / M rates | `productive_min / Ea` | no — §20.2, per unit |
+
+Trips: `trips = ceil(batch / transfer_size)`.
+
+**Revises §20.2 / §20.3.** Code and doc today say `batch_cycle = slots × Ea` — that
+charges setup once per unit. Correct shape is `C/O + slots × Ea`.
+
+### 21.5 Worked example — crane, 3 frames, 1 ea
+
+Flooring batch = 3 frames. Crane rigs once, lifts 1 frame per run (transfer size 1,
+because Receiving holds 1 slot), unrigs.
+
+| Quantity | Value |
+|---|---|
+| batch (process batch) | 3 |
+| transfer size | **1** = min(crane capacity, Receiving `slots: 1`) |
+| trips | 3 / 1 = **3** |
+| C/O (rig + unrig) | 10 min, **once** |
+| touch per trip | 45 s |
+| transfer cycle | 3 × 45 s = 2 m 15 s |
+| **batch cycle (correct)** | 10 m + 2 m 15 s = **12 m 15 s** |
+| batch cycle (today's code) | 3 × 10 m 45 s = **32 m 15 s** — setup charged 3× |
+
+The setup is the **header** of the batch, not a member of it. The pause after the 3rd
+move is the next setup (or wait for downstream) — a process-batch / transfer-batch
+boundary (§17.4).
+
+### 21.6 Shared, non-dedicated resources (crane, space)
+
+The crane is not dedicated to this line. It is a **pool with count 1**, same shape as
+Rigging = 10 (§7.1–7.3).
+
+| Resource | Kind | Where it would live | Idle is a loss? | Contention shows as |
+|---|---|---|---|---|
+| crane | machine pool, count 1 | §7.2 pool record with `count` (generalize `headcount`) | **no** | §7.5 system short |
+| floor space | **capacity — see §21.7** | per-card slot pitch + factory unit footprint | **no** | §7.5 system short |
+
+Charges to this line: **rig/unrig (C/O) + lift (touch)**. Never the crane's idle time —
+"idle waiting on full kit is often correct subordination" (`manifesto.md:88`);
+"utilization as goal on non-constraints" is an anti-pattern (`manifesto.md:111`).
+
+Wait-for-crane is **queue time** — lead time, not C/O, not touch.
+
+Gap: the crane fits neither existing home. §7.2 pool record has `headcount` only (no
+machine). `equipment.ex` is a build-out / procurement asset (`belongs_to :step`, `status
+:spec'd/:ordered/:delivered/:installed`) — one-time, installed once, never contended.
+Generalize the pool record to `kind: :people | :machine` rather than adding a second table.
+
+### 21.7 Floor space — geometry, owned by the DWG (not the app)
+
+**Decision (2026-10-01): the app does NOT carry geometry.** Documented here only, so
+flowspec-ops and the companion DWG plans use the same words.
+
+| Artifact | Owns |
+|---|---|
+| **flowspec-ops** | the net: cards, links, slots as **counts**, timing, setup/C-O, rates |
+| **setup DWG plans** — AutoCAD · SketchUp · Fusion | plant, lines, work_cells **geometry**: pitch, clearance, aisles, fits, floor layout |
+
+Why it stays out: a 40 × 8 × 9 ft frame makes floor space critical in the drawing, but
+as geometry it clutters the visual tool. `slots` in the app stays a pure count — one
+position, no size. A 1-slot Receiving and a 3-slot Flooring read the same to the app,
+and that is fine: whether the frame physically fits is the DWG's question.
+
+Nothing in the app changes because of this section. No migration, no fields, no chrome.
+
+A 40 × 8 × 9 ft frame cannot be reasoned about in slot *counts* **in the drawing**.
+`slots` is already defined as floor space in §4.1 ("planned concurrent units /
+**floor space**"); the app just does not size it.
+
+#### Three units, deliberately separate (in the drawing)
+
+| Unit | Meaning | Lives on |
+|---|---|---|
+| **slot** | one position at a card, with a pitch | the DWG (per card) |
+| **unit** | the thing being made (40 × 8 × 9 ft) | the DWG / product spec — `length_ft`, `width_ft`, `height_ft` |
+| **trip / batch** | how many units move or are worked at once | **flowspec-ops** — `slots`, transfer size |
+
+#### Definition — slot pitch
+
+**Pitch = center-to-center distance between two adjacent slot positions, along the axis
+the slots are arrayed.** Borrowed from track / tie / parking pitch: it is the spacing
+*between neighbours*, not the size of one position.
+
+Two numbers, easily confused:
+
+| Term | Meaning |
+|---|---|
+| `slot_length_ft` | clear length ONE position gives its unit — unit length + that unit's own access |
+| `slot_pitch_ft` | distance from one slot's start to the NEXT slot's start = `slot_length_ft` + gap between neighbours |
+
+For N slots in a row:
+
+    run = (N − 1) × pitch + length      exact
+    run ≈ N × pitch                     when the gap is folded in
+
+The two are equal **only** when the gap between neighbours is zero — nose to tail with
+no manoeuvring room. In practice they differ, which is why the total-floor check below
+uses pitch. (My earlier "slots × slot_length_ft" for total floor was loose — the
+inter-slot gap is real floor.)
+
+Axis: pitch is measured along the **array axis** — usually the unit's length, since
+frames park nose to tail. Lateral spacing is a second pitch, covered by
+`slot_width_ft`. A card arrayed both ways needs both.
+
+#### Slot pitch — why each card needs its own (in the drawing)
+
+Slot pitch = unit length + clearance. The same frame gives **different pitches per
+card**, because what surrounds it differs:
+
+| Card | Pitch | Why |
+|---|---|---|
+| Receiving | long | frame + inspection walk-around |
+| Flooring bay | long + side access | work all around it, 3 bays side by side |
+| EPS storage lot | tight | just parked, nose to tail |
+| Movement aisle | unit length + turn radius | crane travel path |
+
+So slot pitch is a **per-card field**, not a factory constant. Height matters
+independently (overhead crane envelope, ceiling).
+
+#### The checks this unlocks (in the drawing) — all integer, all cheap
+
+| Check | Formula | Fails when |
+|---|---|---|
+| **Unit fits a slot** | `slot_length_ft ≥ unit.length_ft + clearance` | frame longer than the bay |
+| **Total floor** | `(N − 1) × slot_pitch_ft + slot_length_ft + aisles` vs factory footprint | factory too small |
+| **Movement path** | `unit.length_ft + turn radius ≤ aisle width` | crane cannot turn |
+| **Cart capacity** | cart deck vs `unit × qty_per_cart` | cart too small |
+| **Height** | `unit.height_ft ≤ crane/ceiling envelope` | cannot lift |
+
+`unit.length_ft + clearance ≤ slot_length_ft` is the whole point: a 1-slot Receiving
+only accepts a 1-per-trip movement because the slot pitch is one frame long. That is
+where **transfer size = min(crane capacity, downstream slots)** (§21.3) actually comes
+from — the receiving slot holds exactly one frame, so trips = 3 in the §21.5 example.
+
+#### Near-term minimum — NONE in the app
+
+**Decision (2026-10-01): geometry is documented here, not built in flowspec-ops.** It
+clutters the visual tool, and the companion artifact already owns it:
+
+| Artifact | Owns |
+|---|---|
+| **flowspec-ops** | the net: cards, links, slots as capacity counts, timing, setup/C-O, rates |
+| **setup DWG plans** (plant / lines / work_cells) — AutoCAD · SketchUp · Fusion | geometry: pitch, clearance, aisles, fits, floor-plan layout |
+
+So the app carries **no** geometry fields, no fit flag, and no floor-plan view. `slots`
+stays a pure count — one position, no size. This section exists so the terms and the
+checks are written down and shared with whoever draws the DWG, not as a build queue.
+
+**In flowspec-ops:** nothing. No migration, no schema fields, no card chrome.
+
+**In the DWG:** slot pitch, clear length, clearance, aisle width, and the fit / floor /
+path / cart / height checks above all live in the drawing.
+
+#### Fields — for the DWG schema, NOT `FactoryNode`
+
+Recorded so the two artifacts use the same words. These do **not** go in the app schema.
+
+| Field | Notes |
+|---|---|
+| `slot_length_ft` | clear length ONE position gives its unit; the fit check uses this |
+| `slot_pitch_ft` | start-to-start spacing to the next slot; the floor-total check uses this |
+| `slot_width_ft` | optional — needed only for side-by-side bays |
+| `slot_clearance_ft` | walk-around vs parked |
+| `aisle_ft` | travel path width, movement cards |
+
+`input_slots` / `output_slots` are **declared but unused** (no reader in `lib/`), so
+they cost nothing to reconcile if slots ever gain meaning beyond a count.
+
+### 21.8 Code touch (when approved — not now)
+
+`batch_cycle_min = slots * ea_parallel` is duplicated in **three** places; add C/O to one
+and the other two drift:
+
+- `station_math.ex:164-171` (`work_cell_sheet`)
+- `show_live.ex:1794-1801`
+- `show_live.ex:2283-2286`
+
+Fix at the source: make the LiveView call `work_cell_sheet` instead of recomputing.
+
+Movement cards have **no sheet and no rate math** — `station_math` has only
+`work_cell_sheet`, and `pencil_html/` has `work_cell`, `queue`, `storage_group`
+templates. The crane example has nowhere to land until a movement sheet exists.
+
+Open decision before any code: setup as a **flag on `FactoryNodeStep`**
+(`kind: :setup`) vs a **scalar on the card** (`changeover_min`). Step flag is preferred —
+the step already carries `people`, `shared`, and `parallel_with_step_id`, which is the
+whole 2-rigging-spreader-bar story; a card scalar cannot express parallel crew without a
+second mechanism.
+
+### 21.9 Checklist
+
+- [ ] Setup step flag (`FactoryNodeStep.kind: :setup`) or card `changeover_min` — decide, then implement
+- [ ] `batch_cycle = C/O + slots × Ea`; collapse the three duplicate call sites
+- [ ] Generalize §7.2 pool record to `kind: :people | :machine`, `count`
+- [ ] Movement sheet (C/T + C/O + trips) — currently absent
+- [ ] Floor space: geometry stays in the DWG plans (§21.7) — no app work
+
+---
+
+*End of draft v1 + session notes + Phase 0 closed + Phase 1 claims + §20 workday/DWM + §21 setup/batch/shared resources.*
