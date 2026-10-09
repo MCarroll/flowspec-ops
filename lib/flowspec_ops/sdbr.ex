@@ -15,7 +15,8 @@ defmodule FlowspecOps.SDBR do
     :monthly_oe,
     :operating_seconds_per_day,
     :operating_days_per_year,
-    :market_variability_factor
+    :market_variability_factor,
+    :cycle_time
   ]
 
   @type t :: %__MODULE__{
@@ -43,7 +44,8 @@ defmodule FlowspecOps.SDBR do
       monthly_oe: Keyword.get(opts, :monthly_oe, 45_000.0),
       operating_seconds_per_day: Keyword.get(opts, :operating_seconds_per_day, 28_800),
       operating_days_per_year: Keyword.get(opts, :operating_days_per_year, 260),
-      market_variability_factor: Keyword.get(opts, :market_variability_factor, 0.20)
+      market_variability_factor: Keyword.get(opts, :market_variability_factor, 0.20),
+      cycle_time: Keyword.get(opts, :cycle_time, nil)
     }
   end
 

@@ -26,11 +26,13 @@ import topbar from "../vendor/topbar"
 import SidebarState from "./hooks/sidebar_state"
 import StepCycleCalc from "./hooks/step_cycle_calc"
 import TabSubmitLast from "./hooks/tab_submit_last"
+import NetScroll from "./hooks/net_scroll"
 
 let Hooks = {
   SidebarState: SidebarState,
   StepCycleCalc: StepCycleCalc,
-  TabSubmitLast: TabSubmitLast
+  TabSubmitLast: TabSubmitLast,
+  NetScroll: NetScroll
 }
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
@@ -45,19 +47,36 @@ topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
 window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
 
-// Scroll to a specific node card when spine segment is clicked
+window.addEventListener("phx:scroll_net", (event) => {
+  const container = document.getElementById("net-scroll")
+  if (!container) return
+  const align = event.detail.align || "left"
+  if (align === "left") {
+    container.scrollTo({ left: 0, behavior: "smooth" })
+  } else if (align === "right") {
+    container.scrollTo({ left: container.scrollWidth, behavior: "smooth" })
+  } else {
+    container.scrollTo({ left: (container.scrollWidth - container.clientWidth) / 2, behavior: "smooth" })
+  }
+})
+
+// Scroll to a specific node card when spine segment is clicked.
+// The whole net (#net-scroll) scrolls as one unit so all lines move together.
 window.addEventListener("phx:scroll_to_node", (event) => {
   const nodeId = event.detail.node_id
   const card = document.querySelector(`[data-node-id="${nodeId}"]`)
-  if (card) {
-    const container = card.closest(".overflow-x-auto")
-    if (container) {
-      const cardRect = card.getBoundingClientRect()
-      const containerRect = container.getBoundingClientRect()
-      const scrollLeft = card.offsetLeft - container.offsetLeft - (containerRect.width / 2) + (cardRect.width / 2)
-      container.scrollTo({ left: scrollLeft, behavior: "smooth" })
-    }
-  }
+  if (!card) return
+  // The net container holds every line; scroll it so the card centers.
+  const container = document.getElementById("net-scroll") || card.closest(".overflow-x-auto")
+  if (!container) return
+  const cardRect = card.getBoundingClientRect()
+  const containerRect = container.getBoundingClientRect()
+  const scrollLeft =
+    container.scrollLeft +
+    (cardRect.left - containerRect.left) -
+    (containerRect.width / 2) +
+    (cardRect.width / 2)
+  container.scrollTo({ left: scrollLeft, behavior: "smooth" })
 })
 
 // connect if there are any LiveViews on the page
