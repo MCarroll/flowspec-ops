@@ -5,6 +5,8 @@ alias FlowspecOps.Factories
 alias FlowspecOps.Factories.FactoryNodeStep
 alias FlowspecOps.Factories.StationMath
 alias FlowspecOps.SDBR
+alias FlowspecOps.Vendors
+alias FlowspecOps.Parts
 
   @tabs [
     {"Project Net", "net"},
@@ -35,15 +37,19 @@ def mount(%{"id" => id}, _session, socket) do
        commitment_edit_open: false,
        commitment_edit_line_id: nil,
        step_edit_id: nil,
-       station_edit_id: nil,
-       transport_edit_id: nil,
+             station_edit_id: nil,
+             transport_edit_id: nil,
+      supplier_edit_id: nil,
+      supplier_vendor_id: nil,
 versions: Factories.list_versions(factory.id),
        versions_open: false,
        save_version_open: false,
        restore_confirm_id: nil,
        card_menu_id: nil,
-       lines: factory.lines
-     )}\
+            lines: factory.lines,
+            vendors: Vendors.list_vendors(),
+            parts: Parts.list_parts()
+          )}\
   end
 
 @impl true
@@ -249,12 +255,36 @@ def handle_event("cancel_commitment_edit", _params, socket) do
            position: next_pos,
            line_id: line_id
          }) do
-      {:ok, _node} ->
+      {:ok, node} ->
+        if kind == "supplier" do
+          seed_supplier_steps(node)
+        end
+
         {:noreply, reload_factory(socket) |> assign(add_node_open: false)}
 
       {:error, _changeset} ->
         {:noreply, socket}
     end
+  end
+
+  defp seed_supplier_steps(node) do
+    defaults = [
+      {"Order", 1},
+      {"MFG Time", 14},
+      {"QC / F.A.", 2},
+      {"Pack & Load", 1}
+    ]
+
+    defaults
+    |> Enum.with_index(1)
+    |> Enum.each(fn {{sname, days}, pos} ->
+      Factories.create_step(%{
+        factory_node_id: node.id,
+        name: sname,
+        position: pos,
+        duration_days: days
+      })
+    end)
   end
 
   @impl true
@@ -592,6 +622,49 @@ def handle_event("cancel_commitment_edit", _params, socket) do
   end
 
   @impl true
+  def handle_event("supplier_vendor_changed", %{"vendor_id" => vid}, socket) do
+    {:noreply, assign(socket, supplier_vendor_id: parse_optional_id(vid))}
+  end
+
+  @impl true
+  def handle_event("open_supplier_edit", %{"id" => id}, socket) do
+    node = Enum.find(socket.assigns.factory.nodes, &(&1.id == String.to_integer(id)))
+    {:noreply, assign(socket, supplier_edit_id: String.to_integer(id), supplier_vendor_id: node && node.vendor_id, step_edit_id: nil)}
+  end
+
+  @impl true
+  def handle_event("cancel_supplier_edit", _params, socket) do
+    {:noreply, assign(socket, supplier_edit_id: nil)}
+  end
+
+  @impl true
+  def handle_event("save_supplier", params, socket) do
+    node_id = String.to_integer(params["node_id"])
+    node = Enum.find(socket.assigns.factory.nodes, &(&1.id == node_id))
+
+    if node do
+      attrs = %{
+        vendor_id: parse_optional_id(Map.get(params, "vendor_id")),
+        part_id: parse_optional_id(Map.get(params, "part_id")),
+        batch_size: parse_optional_positive_int(Map.get(params, "batch_size")),
+        first_batch_qty: parse_optional_positive_int(Map.get(params, "order_qty")),
+        lead_time_days: parse_optional_positive_int(Map.get(params, "lead_time_days")),
+        supply_cadence: blank_to_nil(Map.get(params, "supply_cadence"))
+      }
+
+      case Factories.update_node(node, attrs) do
+        {:ok, _} ->
+          {:noreply, reload_factory(socket) |> assign(supplier_edit_id: nil)}
+
+        {:error, _} ->
+          {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_event("cancel_station_edit", _params, socket) do
     {:noreply, assign(socket, station_edit_id: nil)}
   end
@@ -692,6 +765,20 @@ def handle_event("cancel_commitment_edit", _params, socket) do
         :if={@transport_edit_id}
         factory={@factory}
         transport_edit_id={@transport_edit_id}
+      />
+      <.supplier_edit_modal
+        :if={@supplier_edit_id}
+        factory={@factory}
+        supplier_edit_id={@supplier_edit_id}
+        vendors={@vendors}
+        parts={@parts}
+      />
+      <.add_node_modal
+        :if={@add_node_open}
+        factory_lines={@factory.lines}
+        add_node_kind={@add_node_kind}
+        add_node_name={@add_node_name}
+        add_node_line_id={@add_node_line_id}
       />
     </div>
     """
@@ -1595,48 +1682,18 @@ defp versions_panel(assigns) do
         <.links_summary links={@links} />
       <% end %>
 
-      <%= if @add_node_open do %>
-        <form phx-submit="add_node" class="flex flex-wrap items-center gap-2 rounded-none border border-zinc-300 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
-          <select name="kind" class="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
-            <option value="work_cell">Work Cell</option>
-            <option value="queue">Queue</option>
-            <option value="supplier">Supplier</option>
-            <option value="transport">Transport</option>
-          </select>
-          <select name="line_id" class="rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
-            <option value="">No line</option>
-            <%= for line <- @factory_lines do %>
-              <option value={line.id}><%= line.name %></option>
-            <% end %>
-          </select>
-          <input
-            type="text"
-            name="name"
-            placeholder="Node name"
-            autofocus
-            class="min-w-[12rem] flex-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
-          />
-          <button type="submit" class="rounded bg-zinc-800 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-600 dark:hover:bg-zinc-500">
-            Add
-          </button>
-          <button type="button" phx-click="cancel_add_node" class="text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400">
-            Cancel
-          </button>
-        </form>
-      <% else %>
-        <button
-          type="button"
-          phx-click="open_add_node"
-          class="rounded-none border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500"
-        >
-          + Add node
-        </button>
-      <% end %>
-    </div>
-    """
-  end
+      <button
+              type="button"
+              phx-click="open_add_node"
+              class="rounded-none border border-dashed border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500"
+            >
+              + Add node
+                          </button>
+                  </div>
+                  """
+                end
 
-  defp line_section(assigns) do
+                defp line_section(assigns) do
     sorted = Enum.sort_by(assigns.line.nodes, & &1.position)
     display_items = line_display_items(sorted)
     spine = line_spine(sorted, assigns.links || [], assigns.all_nodes || [])
@@ -2014,9 +2071,7 @@ defp node_card(assigns) do
             </div>
           </div>
           <div class="py-0.5">
-            <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
-              Part
-            </div>
+            <div class="border-t border-dashed border-zinc-200 dark:border-zinc-600"></div>
             <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
               <span class="text-zinc-500 dark:text-zinc-400">Part</span>
               <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
@@ -4053,9 +4108,134 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
       </div>
     <% end %>
     """
+      end
+
+      defp add_node_modal(assigns) do
+    ~H"""
+    <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-zinc-900/40" phx-click="cancel_add_node"></div>
+      <div class="relative w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+        <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Add card</h3>
+        <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">What kind of card?</p>
+
+        <form phx-submit="add_node" class="mt-3 space-y-3">
+          <div class="grid grid-cols-2 gap-2">
+            <%= for {value, label} <- [{"work_cell", "Work Cell"}, {"queue", "Queue"}, {"supplier", "Supplier"}, {"transport", "Transport"}, {"movement", "Movement"}] do %>
+              <label class={[
+                "flex cursor-pointer items-center gap-2 rounded border px-3 py-2 text-xs font-medium",
+                @add_node_kind == value && "border-indigo-400 bg-indigo-50 text-indigo-800 dark:border-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-200",
+                @add_node_kind != value && "border-zinc-300 text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              ]}>
+                <input type="radio" name="kind" value={value} checked={@add_node_kind == value} class="sr-only" />
+                <%= label %>
+              </label>
+            <% end %>
+          </div>
+
+          <label class="block">
+            <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Line</span>
+            <select name="line_id" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
+              <option value="">No line</option>
+              <%= for line <- @factory_lines do %>
+                <option value={line.id} selected={@add_node_line_id == line.id}><%= line.name %></option>
+              <% end %>
+            </select>
+          </label>
+
+          <label class="block">
+            <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Name</span>
+            <input type="text" name="name" value={@add_node_name} placeholder="Card name" autofocus class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+          </label>
+
+          <div class="flex items-center justify-end gap-2 pt-1">
+            <button type="button" phx-click="cancel_add_node" class="px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400">
+              Cancel
+            </button>
+            <button type="submit" class="rounded bg-zinc-900 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">
+              Add
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    """
   end
 
-  defp station_edit_modal(assigns) do
+  defp supplier_edit_modal(assigns) do
+          node = Enum.find(assigns.factory.nodes, &(&1.id == assigns.supplier_edit_id))
+          vendor_id = assigns[:supplier_vendor_id] || (node && node.vendor_id)
+          parts = Enum.filter(assigns.parts, &(&1.vendor_id == vendor_id))
+          assigns = assign(assigns, node: node, vendor_id: vendor_id, parts: parts)
+
+          ~H"""
+          <%= if @node do %>
+            <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div class="absolute inset-0 bg-zinc-900/40" phx-click="cancel_supplier_edit"></div>
+              <div class="relative w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+                <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Supplier · <%= @node.name %></h3>
+                <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">Vendor selection and parts.</p>
+
+                <form phx-submit="save_supplier" class="mt-3 space-y-3">
+                  <input type="hidden" name="node_id" value={@node.id} />
+
+                  <label class="block">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Vendor</span>
+                    <select name="vendor_id" phx-change="supplier_vendor_changed" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
+                      <option value="">—</option>
+                      <%= for v <- @vendors do %>
+                        <option value={v.id} selected={@vendor_id == v.id}><%= v.name %></option>
+                      <% end %>
+                    </select>
+                  </label>
+
+                  <label class="block">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Part</span>
+                    <select name="part_id" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
+                      <option value="">—</option>
+                      <%= for p <- @parts do %>
+                        <option value={p.id} selected={@node.part_id == p.id}><%= p.name %></option>
+                      <% end %>
+                    </select>
+                  </label>
+
+                <div class="flex gap-2">
+                  <label class="block flex-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Order qty</span>
+                    <input type="number" name="order_qty" min="1" value={@node.first_batch_qty} class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                  </label>
+                  <label class="block flex-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Batch size</span>
+                    <input type="number" name="batch_size" min="1" value={@node.batch_size} class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                  </label>
+                </div>
+
+                <div class="flex gap-2">
+                  <label class="block flex-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Lead (days)</span>
+                    <input type="number" name="lead_time_days" min="1" value={@node.lead_time_days} class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                  </label>
+                  <label class="block flex-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Cadence</span>
+                    <input type="text" name="supply_cadence" value={@node.supply_cadence} placeholder="e.g. 300 / week" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                  </label>
+                </div>
+
+                <div class="flex items-center justify-end gap-2 pt-1">
+                  <button type="button" phx-click="cancel_supplier_edit" class="px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400">
+                    Cancel
+                  </button>
+                  <button type="submit" class="rounded bg-zinc-900 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">
+                    Save
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        <% end %>
+        """
+      end
+
+      defp station_edit_modal(assigns) do
     node = Enum.find(assigns.factory.nodes, &(&1.id == assigns.station_edit_id))
     assigns = assign(assigns, node: node)
 
