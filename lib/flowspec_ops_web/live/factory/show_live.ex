@@ -682,10 +682,9 @@ def handle_event("cancel_commitment_edit", _params, socket) do
       attrs = %{
         vendor_id: parse_optional_id(Map.get(params, "vendor_id")),
         part_id: parse_optional_id(Map.get(params, "part_id")),
-        batch_size: parse_optional_positive_int(Map.get(params, "batch_size")),
                 first_batch_qty: parse_optional_positive_int(Map.get(params, "order_qty")),
                 supply_batch: parse_optional_positive_int(Map.get(params, "supply_batch")),
-                supply_frequency_days: parse_optional_positive_int(Map.get(params, "supply_frequency_days"))
+                supply_frequency_days: parse_duration_days(Map.get(params, "supply_frequency"))
       }
 
       case Factories.update_node(node, attrs) do
@@ -1028,6 +1027,30 @@ def handle_event("cancel_commitment_edit", _params, socket) do
     end
 
     defp format_duration_days(_), do: "—"
+
+    # Parse "2d" / "1w" / "60d" / "1m" into days. Returns nil on garbage.
+    defp parse_duration_days(str) when is_binary(str) do
+      case Regex.run(~r/^\s*(\d+(?:\.\d+)?)\s*([dwmy]?)\s*$/i, str) do
+        [_, num, unit] ->
+          case Float.parse(num) do
+            {f, _} when f > 0 ->
+              case String.downcase(unit) do
+                "w" -> round(f * 7)
+                "m" -> round(f * 30)
+                "h" -> round(f / 24)
+                _ -> round(f)
+              end
+
+            _ ->
+              nil
+          end
+
+        _ ->
+          nil
+      end
+    end
+
+    defp parse_duration_days(_), do: nil
 
     # ETA at dock = order_date + Σ step durations (days). Returns {date, total_days} or nil.
     defp supply_eta(node) do
@@ -2116,8 +2139,8 @@ defp node_card(assigns) do
               <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
               <span class="text-zinc-500 dark:text-zinc-400">Order qty</span>
               <span class="tabular-nums text-right"><%= if @node.first_batch_qty, do: @node.first_batch_qty, else: "—" %></span>
-              <span class="text-zinc-500 dark:text-zinc-400">Batch size</span>
-              <span class="tabular-nums text-right"><%= if @node.batch_size, do: @node.batch_size, else: "—" %></span>
+              <span class="text-zinc-500 dark:text-zinc-400">Batch</span>
+              <span class="tabular-nums text-right"><%= if @node.supply_batch, do: @node.supply_batch, else: "—" %></span>
             </div>
 
             <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
@@ -4321,19 +4344,15 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
                     <input type="number" name="order_qty" min="1" value={@node.first_batch_qty} class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
                   </label>
                   <label class="block flex-1">
-                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Batch size</span>
-                    <input type="number" name="batch_size" min="1" value={@node.batch_size} class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Batch</span>
+                    <input type="number" name="supply_batch" min="1" value={@node.supply_batch} placeholder="e.g. 150" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
                   </label>
                 </div>
 
                 <div class="flex gap-2">
                   <label class="block flex-1">
-                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Batch</span>
-                    <input type="number" name="supply_batch" min="1" value={@node.supply_batch} placeholder="e.g. 150" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
-                  </label>
-                  <label class="block flex-1">
-                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Every (days)</span>
-                    <input type="number" name="supply_frequency_days" min="1" value={@node.supply_frequency_days} placeholder="e.g. 2" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Every</span>
+                    <input type="text" name="supply_frequency" value={format_duration_days(@node.supply_frequency_days)} placeholder="e.g. 2d, 1w, 60d" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
                   </label>
                 </div>
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
