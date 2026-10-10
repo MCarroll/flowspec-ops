@@ -42,6 +42,8 @@ defmodule FlowspecOps.Factories.FactoryNode do
     # Supplier timing / setup
     field :lead_time_days, :integer
     field :supply_cadence, :string
+    field :supply_batch, :integer
+    field :supply_frequency_days, :integer
     field :setup_days, :integer
     field :first_batch_days, :integer
     field :first_batch_qty, :integer
@@ -86,7 +88,7 @@ defmodule FlowspecOps.Factories.FactoryNode do
       :queue_role, :slots, :storage_group,
       :standup_weeks, :standup_people, :standup_source, :standup_note,
       :inspection_point, :gate, :product_ready, :method_instruction, :line_id, :location_note,
-      :lead_time_days, :supply_cadence,
+      :lead_time_days, :supply_cadence, :supply_batch, :supply_frequency_days,
       :setup_days, :first_batch_days, :first_batch_qty, :production_batch_slots, :order_date,
       :transport_duration_minutes, :from_location, :to_location,
       :vendor_name, :batch_size, :ship_weekday, :transit_days, :transport_mode,

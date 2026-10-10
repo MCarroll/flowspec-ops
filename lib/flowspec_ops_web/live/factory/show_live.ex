@@ -683,9 +683,9 @@ def handle_event("cancel_commitment_edit", _params, socket) do
         vendor_id: parse_optional_id(Map.get(params, "vendor_id")),
         part_id: parse_optional_id(Map.get(params, "part_id")),
         batch_size: parse_optional_positive_int(Map.get(params, "batch_size")),
-        first_batch_qty: parse_optional_positive_int(Map.get(params, "order_qty")),
-        lead_time_days: parse_optional_positive_int(Map.get(params, "lead_time_days")),
-        supply_cadence: blank_to_nil(Map.get(params, "supply_cadence"))
+                first_batch_qty: parse_optional_positive_int(Map.get(params, "order_qty")),
+                supply_batch: parse_optional_positive_int(Map.get(params, "supply_batch")),
+                supply_frequency_days: parse_optional_positive_int(Map.get(params, "supply_frequency_days"))
       }
 
       case Factories.update_node(node, attrs) do
@@ -995,11 +995,12 @@ def handle_event("cancel_commitment_edit", _params, socket) do
 
   defp required_weekly_rate_after_setup(_, _), do: nil
 
-  # Prefer explicit supply cadence (e.g. "3 frames / week"); else 7/lead_time_days.
+  # Cadence = batch × 7 / frequency_days (units per week). Fallback: 7/lead_time_days.
   defp designed_weekly_rate(node) do
       cond do
-        match = cadence_weekly_rate(Map.get(node, :supply_cadence)) ->
-          match
+        is_integer(node.supply_batch) and node.supply_batch > 0 and
+            is_integer(node.supply_frequency_days) and node.supply_frequency_days > 0 ->
+          Float.round(node.supply_batch * 7.0 / node.supply_frequency_days, 1)
 
         is_integer(node.lead_time_days) and node.lead_time_days > 0 ->
           Float.round(7.0 / node.lead_time_days, 1)
@@ -1008,6 +1009,25 @@ def handle_event("cancel_commitment_edit", _params, socket) do
           nil
       end
     end
+
+    # Compact duration: 2h / 5d / 3w / 1m. Input is days (canonical).
+    defp format_duration_days(days) when is_integer(days) and days > 0 do
+      cond do
+        days >= 30 -> "#{div(days, 30)}m"
+        days >= 7 -> "#{div(days, 7)}w"
+        true -> "#{days}d"
+      end
+    end
+
+    defp format_duration_days(days) when is_float(days) and days > 0 do
+      if days < 1 do
+        "#{round(days * 24)}h"
+      else
+        format_duration_days(round(days))
+      end
+    end
+
+    defp format_duration_days(_), do: "—"
 
     # ETA at dock = order_date + Σ step durations (days). Returns {date, total_days} or nil.
     defp supply_eta(node) do
@@ -1033,30 +1053,7 @@ def handle_event("cancel_commitment_edit", _params, socket) do
       "#{Calendar.strftime(date, "%m/%d/%y")} (#{days}d from order)"
     end
 
-  defp cadence_weekly_rate(cadence) when is_binary(cadence) do
-    cleaned = cadence |> String.downcase() |> String.trim()
-
-    cond do
-      Regex.match?(~r/per\s*week|\/\s*week|a\s*week|weekly/, cleaned) ->
-        case Regex.run(~r/(\d+(?:\.\d+)?)/, cleaned) do
-          [_, num] ->
-            case Float.parse(num) do
-              {f, _} when f > 0 -> Float.round(f, 1)
-              _ -> nil
-            end
-
-          _ ->
-            nil
-        end
-
-      true ->
-        nil
-    end
-  end
-
-  defp cadence_weekly_rate(_), do: nil
-
-defp format_rate(v), do: StationMath.format_rate(v)
+  defp format_rate(v), do: StationMath.format_rate(v)
 
   defp supplier_vs_commitment(mpl, node) do
     need_wk = required_weekly_rate(mpl)
@@ -2138,7 +2135,7 @@ defp node_card(assigns) do
                 </span>
                 <span class="truncate font-medium text-zinc-700 dark:text-zinc-200"><%= step.name %></span>
                 <span class="tabular-nums text-[10px] text-zinc-400">
-                  <%= if step.duration_days, do: "#{step.duration_days}d", else: "—" %>
+                  <%= if step.duration_days, do: format_duration_days(step.duration_days), else: "—" %>
                 </span>
               </button>
             <% end %>
@@ -2353,7 +2350,7 @@ defp node_card(assigns) do
               </span>
               <span class="truncate font-medium text-zinc-700 dark:text-zinc-200"><%= step.name %></span>
               <span class="tabular-nums text-[10px] text-zinc-400">
-                <%= if step.duration_days, do: "#{step.duration_days}d", else: "—" %>
+                <%= if step.duration_days, do: format_duration_days(step.duration_days), else: "—" %>
               </span>
             </button>
           <% end %>
@@ -4047,8 +4044,9 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
       <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-zinc-900/40" phx-click="cancel_transport_edit"></div>
         <div class="relative w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-          <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Transport · <%= @node.name %></h3>
-          <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">Route and schedule details.</p>
+          <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100"><%= @node.name %></h3>
+          <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">Route and schedule details.
+          </p>
 
           <form phx-submit="save_transport" class="mt-3 space-y-3">
             <input type="hidden" name="node_id" value={@node.id} />
@@ -4282,8 +4280,7 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
             <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div class="absolute inset-0 bg-zinc-900/40" phx-click="cancel_supplier_edit"></div>
               <div class="relative w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-                <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Supplier · <%= @node.name %></h3>
-                <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">Vendor selection and parts.</p>
+                <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100"><%= @node.name %></h3>
 
                 <form phx-submit="save_supplier" class="mt-3 space-y-3">
                   <input type="hidden" name="node_id" value={@node.id} />
@@ -4331,13 +4328,16 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
 
                 <div class="flex gap-2">
                   <label class="block flex-1">
-                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Lead (days)</span>
-                    <input type="number" name="lead_time_days" min="1" value={@node.lead_time_days} class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Batch</span>
+                    <input type="number" name="supply_batch" min="1" value={@node.supply_batch} placeholder="e.g. 150" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
                   </label>
                   <label class="block flex-1">
-                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Cadence</span>
-                    <input type="text" name="supply_cadence" value={@node.supply_cadence} placeholder="e.g. 300 / week" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Every (days)</span>
+                    <input type="number" name="supply_frequency_days" min="1" value={@node.supply_frequency_days} placeholder="e.g. 2" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
                   </label>
+                </div>
+                <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Cadence: <%= if @node.supply_batch && @node.supply_frequency_days, do: "#{format_rate(@node.supply_batch * 7.0 / @node.supply_frequency_days)}/wk", else: "—" %>
                 </div>
 
                 <div class="flex items-center justify-end gap-2 pt-1">

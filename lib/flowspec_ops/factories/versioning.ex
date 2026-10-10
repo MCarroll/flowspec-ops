@@ -235,17 +235,17 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
          bypass_allowed, note, queue_role, slots, storage_group, crew_size,
          standup_weeks, standup_people, standup_source, standup_note,
          inspection_point, gate, product_ready, method_instruction, location_note,
-         lead_time_days, supply_cadence, setup_days, first_batch_days, first_batch_qty,
-         production_batch_slots, transport_duration_minutes, from_location, to_location,
-         vendor_name, batch_size, ship_weekday, transit_days, inserted_at, updated_at)
-      SELECT $1, id, factory_id, line_id, kind, name, position,
-         bypass_allowed, note, queue_role, slots, storage_group, crew_size,
-         standup_weeks, standup_people, standup_source, standup_note,
-         inspection_point, gate, product_ready, method_instruction, location_note,
-         lead_time_days, supply_cadence, setup_days, first_batch_days, first_batch_qty,
-         production_batch_slots, transport_duration_minutes, from_location, to_location,
-         vendor_name, batch_size, ship_weekday, transit_days, inserted_at, updated_at
-      FROM factory_nodes WHERE factory_id = $2
+         lead_time_days, supply_cadence, supply_batch, supply_frequency_days, setup_days, first_batch_days, first_batch_qty,
+                 production_batch_slots, transport_duration_minutes, from_location, to_location,
+                 vendor_name, batch_size, ship_weekday, transit_days, inserted_at, updated_at)
+               SELECT $1, id, factory_id, line_id, kind, name, position,
+                 bypass_allowed, note, queue_role, slots, storage_group, crew_size,
+                 standup_weeks, standup_people, standup_source, standup_note,
+                 inspection_point, gate, product_ready, method_instruction, location_note,
+                 lead_time_days, supply_cadence, supply_batch, supply_frequency_days, setup_days, first_batch_days, first_batch_qty,
+                 production_batch_slots, transport_duration_minutes, from_location, to_location,
+                 vendor_name, batch_size, ship_weekday, transit_days, inserted_at, updated_at
+               FROM factory_nodes WHERE factory_id = $2
       """,
       [version_id, factory_id]
     )
@@ -271,10 +271,10 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
       INSERT INTO factory_version_node_steps
         (version_id, source_id, factory_node_id, name, position, estimated_minutes,
          minutes_each, qty_per_unit, people, specs, shared, parallel_with_step_id,
-         inserted_at, updated_at)
+         duration_days, inserted_at, updated_at)
       SELECT $1, s.id, s.factory_node_id, s.name, s.position, s.estimated_minutes,
          s.minutes_each, s.qty_per_unit, s.people, s.specs, s.shared, s.parallel_with_step_id,
-         s.inserted_at, s.updated_at
+         s.duration_days, s.inserted_at, s.updated_at
       FROM factory_node_steps s
       INNER JOIN factory_nodes n ON n.id = s.factory_node_id
       WHERE n.factory_id = $2
@@ -449,11 +449,11 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
                standup_weeks, standup_people, standup_source, standup_note,
                inspection_point, gate,
                product_ready, method_instruction, location_note, lead_time_days,
-               supply_cadence, setup_days, first_batch_days, first_batch_qty,
-               production_batch_slots, transport_duration_minutes, from_location,
-               to_location, vendor_name, batch_size, ship_weekday, transit_days,
-               inserted_at, updated_at
-        FROM factory_version_nodes WHERE version_id = $1 ORDER BY position, source_id
+                              supply_cadence, supply_batch, supply_frequency_days, setup_days, first_batch_days, first_batch_qty,
+                              production_batch_slots, transport_duration_minutes, from_location,
+                              to_location, vendor_name, batch_size, ship_weekday, transit_days,
+                              inserted_at, updated_at
+                       FROM factory_version_nodes WHERE version_id = $1 ORDER BY position, source_id
         """,
         [version_id]
       )
@@ -481,21 +481,23 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
         method_instruction,
         location_note,
         lead_time_days,
-        supply_cadence,
-        setup_days,
-        first_batch_days,
-        first_batch_qty,
-        production_batch_slots,
-        transport_duration_minutes,
-        from_location,
-        to_location,
-        vendor_name,
-        batch_size,
-        ship_weekday,
-        transit_days,
-        ins,
-        upd
-      ] = row
+                supply_cadence,
+                supply_batch,
+                supply_frequency_days,
+                setup_days,
+                first_batch_days,
+                first_batch_qty,
+                production_batch_slots,
+                transport_duration_minutes,
+                from_location,
+                to_location,
+                vendor_name,
+                batch_size,
+                ship_weekday,
+                transit_days,
+                ins,
+                upd
+              ] = row
 
       new_line_id = if line_id, do: Map.fetch!(line_map, line_id), else: nil
 
@@ -508,13 +510,13 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
              standup_weeks, standup_people, standup_source, standup_note,
              inspection_point, gate,
              product_ready, method_instruction, location_note, lead_time_days,
-             supply_cadence, setup_days, first_batch_days, first_batch_qty,
+             supply_cadence, supply_batch, supply_frequency_days, setup_days, first_batch_days, first_batch_qty,
              production_batch_slots, transport_duration_minutes, from_location,
              to_location, vendor_name, batch_size, ship_weekday, transit_days,
              inserted_at, updated_at)
           VALUES
             ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-             $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
+             $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)
           RETURNING id
           """,
           [
@@ -540,6 +542,8 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
             location_note,
             lead_time_days,
             supply_cadence,
+            supply_batch,
+            supply_frequency_days,
             setup_days,
             first_batch_days,
             first_batch_qty,
@@ -598,7 +602,7 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
         """
         SELECT source_id, factory_node_id, name, position, estimated_minutes,
                minutes_each, qty_per_unit, people, specs, shared, parallel_with_step_id,
-               inserted_at, updated_at
+               duration_days, inserted_at, updated_at
         FROM factory_version_node_steps WHERE version_id = $1 ORDER BY position, source_id
         """,
         [version_id]
@@ -617,11 +621,12 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
           qty_per_unit,
           people,
           specs,
-          shared,
-          _parallel,
-          ins,
-          upd
-        ] = row
+                    shared,
+                    _parallel,
+                    duration_days,
+                    ins,
+                    upd
+                  ] = row
 
         {:ok, %{rows: [[new_id]]}} =
           Repo.query(
@@ -629,8 +634,8 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
             INSERT INTO factory_node_steps
               (factory_node_id, name, position, estimated_minutes, minutes_each,
                qty_per_unit, people, specs, shared, parallel_with_step_id,
-               inserted_at, updated_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,$10,$11)
+               duration_days, inserted_at, updated_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,$10,$11,$12)
             RETURNING id
             """,
             [
@@ -643,9 +648,10 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
               people,
               specs,
               if(is_nil(shared), do: true, else: shared),
-              ins || now,
-              upd || now
-            ]
+                            duration_days,
+                            ins || now,
+                            upd || now
+                          ]
           )
 
         Map.put(acc, source_id, new_id)
@@ -653,7 +659,7 @@ def save_version(%Factory{} = factory, attrs) when is_map(attrs) do
 
     # Pass 2: parallel_with refs
     Enum.each(rows, fn row ->
-      [source_id, _, _, _, _, _, _, _, _, _, parallel, _, _] = row
+      [source_id, _, _, _, _, _, _, _, _, _, parallel, _, _, _] = row
 
       if parallel do
         Repo.query!(
