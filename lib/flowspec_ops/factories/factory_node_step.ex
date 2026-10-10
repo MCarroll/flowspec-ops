@@ -6,6 +6,7 @@ defmodule FlowspecOps.Factories.FactoryNodeStep do
     field :name, :string
     field :position, :integer
     field :estimated_minutes, :integer
+    field :duration_days, :integer
     field :minutes_each, :integer
     field :qty_per_unit, :integer
     field :people, :integer
@@ -31,6 +32,7 @@ defmodule FlowspecOps.Factories.FactoryNodeStep do
       :name,
       :position,
       :estimated_minutes,
+      :duration_days,
       :minutes_each,
       :qty_per_unit,
       :people,

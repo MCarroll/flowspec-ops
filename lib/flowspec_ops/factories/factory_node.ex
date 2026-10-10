@@ -46,6 +46,7 @@ defmodule FlowspecOps.Factories.FactoryNode do
     field :first_batch_days, :integer
     field :first_batch_qty, :integer
     field :production_batch_slots, :integer
+    field :order_date, :date
     # Transport
     field :transport_duration_minutes, :integer
     field :from_location, :string
@@ -86,7 +87,7 @@ defmodule FlowspecOps.Factories.FactoryNode do
       :standup_weeks, :standup_people, :standup_source, :standup_note,
       :inspection_point, :gate, :product_ready, :method_instruction, :line_id, :location_note,
       :lead_time_days, :supply_cadence,
-      :setup_days, :first_batch_days, :first_batch_qty, :production_batch_slots,
+      :setup_days, :first_batch_days, :first_batch_qty, :production_batch_slots, :order_date,
       :transport_duration_minutes, :from_location, :to_location,
       :vendor_name, :batch_size, :ship_weekday, :transit_days, :transport_mode,
       :qty_in_circulation, :trips_per_day, :operator_count, :duration_minutes,

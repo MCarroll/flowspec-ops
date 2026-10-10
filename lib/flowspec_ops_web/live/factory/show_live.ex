@@ -300,7 +300,7 @@ def handle_event("cancel_commitment_edit", _params, socket) do
     node_id_int = String.to_integer(node_id)
     node = Enum.find(socket.assigns.factory.nodes, &(&1.id == node_id_int))
 
-    if node && node.kind == :work_cell do
+    if node && node.kind in [:work_cell, :supplier, :transport] do
       next_pos = length(node.steps) + 1
 
       case Factories.create_step(%{
@@ -868,17 +868,41 @@ def handle_event("cancel_commitment_edit", _params, socket) do
 
   # Prefer explicit supply cadence (e.g. "3 frames / week"); else 7/lead_time_days.
   defp designed_weekly_rate(node) do
-    cond do
-      match = cadence_weekly_rate(Map.get(node, :supply_cadence)) ->
-        match
+      cond do
+        match = cadence_weekly_rate(Map.get(node, :supply_cadence)) ->
+          match
 
-      is_integer(node.lead_time_days) and node.lead_time_days > 0 ->
-        Float.round(7.0 / node.lead_time_days, 1)
+        is_integer(node.lead_time_days) and node.lead_time_days > 0 ->
+          Float.round(7.0 / node.lead_time_days, 1)
 
-      true ->
-        nil
+        true ->
+          nil
+      end
     end
-  end
+
+    # ETA at dock = order_date + Σ step durations (days). Returns {date, total_days} or nil.
+    defp supply_eta(node) do
+      days =
+        (node.steps || [])
+        |> Enum.map(& &1.duration_days)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.sum()
+
+      cond do
+        node.order_date && days > 0 ->
+          {Date.add(node.order_date, days), days}
+
+        node.order_date ->
+          {node.order_date, 0}
+
+        true ->
+          nil
+      end
+    end
+
+    defp format_eta({date, days}) do
+      "#{Calendar.strftime(date, "%m/%d/%y")} (#{days}d from order)"
+    end
 
   defp cadence_weekly_rate(cadence) when is_binary(cadence) do
     cleaned = cadence |> String.downcase() |> String.trim()
@@ -1857,13 +1881,25 @@ defp versions_panel(assigns) do
   # Pattern-matched dispatch by node kind
   defp node_card(%{node: %{kind: :supplier}} = assigns) do
     ~H"""
-    <.supplier_card factory={@factory} node={@node} sequence={@sequence} scroll_to_node_id={@scroll_to_node_id} />
+    <.supplier_card
+      factory={@factory}
+      node={@node}
+      sequence={@sequence}
+      add_step_node_id={@add_step_node_id}
+      card_menu_id={@card_menu_id}
+      scroll_to_node_id={@scroll_to_node_id}
+    />
     """
   end
 
   defp node_card(%{node: %{kind: :transport}} = assigns) do
     ~H"""
-    <.transport_card node={@node} sequence={@sequence} scroll_to_node_id={@scroll_to_node_id} />
+    <.transport_card
+      node={@node}
+      sequence={@sequence}
+      add_step_node_id={@add_step_node_id}
+      scroll_to_node_id={@scroll_to_node_id}
+    />
     """
   end
 
@@ -1913,153 +1949,187 @@ defp node_card(assigns) do
   # --- Kind-specific cards (calijane2-shaped) ---
 
   defp supplier_card(assigns) do
-    mpl = Enum.find(assigns.factory.master_production_lines, &(&1.id == assigns.node.line && assigns.node.line.master_production_line_id))
-    vs = supplier_vs_commitment(mpl, assigns.node)
-    assigns = assign(assigns, :vs, vs)
+      mpl = Enum.find(assigns.factory.master_production_lines, &(&1.id == assigns.node.line && assigns.node.line.master_production_line_id))
+      vs = supplier_vs_commitment(mpl, assigns.node)
+      eta = supply_eta(assigns.node)
+      assigns = assign(assigns, :vs, vs) |> assign(:eta, eta)
 
-    ~H"""
-    <div data-node-id={@node.id} class="w-[18rem] md:w-[18.5rem] shrink-0">
-      <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
-        <div class="flex items-center gap-2 border-b border-green-300 bg-green-100 px-2.5 py-1.5 dark:border-green-700 dark:bg-green-900/30">
-          <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-green-400 text-[10px] font-bold tabular-nums text-green-800 dark:border-green-500 dark:text-green-200">
-            <%= @sequence || @node.position %>
-          </span>
-          <h4 class="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-zinc-900 dark:text-zinc-100">
-            <%= @node.name %>
-          </h4>
-          <%= if @node.location do %>
-            <span class="rounded border border-zinc-300 bg-zinc-100 px-1 py-0.5 text-[9px] font-medium text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-              <%= @node.location %>
+      ~H"""
+      <div data-node-id={@node.id} class="w-[18rem] md:w-[18.5rem] shrink-0">
+        <div class="flex flex-col overflow-hidden rounded-none border border-zinc-200 bg-white text-xs dark:border-zinc-600 dark:bg-zinc-800">
+          <div class="flex items-center gap-2 border-b border-green-300 bg-green-100 px-2.5 py-1.5 dark:border-green-700 dark:bg-green-900/30">
+            <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-green-400 text-[10px] font-bold tabular-nums text-green-800 dark:border-green-500 dark:text-green-200">
+              <%= @sequence || @node.position %>
             </span>
-          <% end %>
-        </div>
-        <div class="py-0.5">
-          <%= if @node.location_note do %>
-            <div class="px-2.5 py-1 text-[11px] text-zinc-500 dark:text-zinc-400"><%= @node.location_note %></div>
-          <% end %>
-
-          <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
-            Input
-          </div>
-          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
-            <span class="text-zinc-500 dark:text-zinc-400">Vendor</span>
-            <span class="text-right"><%= @node.vendor_name || (@node.vendor && @node.vendor.name) || "—" %></span>
-            <span class="text-zinc-500 dark:text-zinc-400">Part</span>
-            <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
-            <span class="text-zinc-500 dark:text-zinc-400">Batch</span>
-            <span class="text-right"><%= if @node.batch_size, do: "#{@node.batch_size} lbs", else: "—" %></span>
-          </div>
-
-          <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
-            Setup
-          </div>
-          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
-            <span class="text-zinc-500 dark:text-zinc-400">Factory setup</span>
-            <span class="tabular-nums text-right">
-              <%= if @node.setup_days, do: "#{@node.setup_days}d", else: "—" %>
-            </span>
-            <span class="text-zinc-500 dark:text-zinc-400">First batch</span>
-            <span class="tabular-nums text-right">
-              <%= cond do %>
-                <% @node.first_batch_days && @node.first_batch_qty -> %>
-                  <%= @node.first_batch_days %>d · qty <%= @node.first_batch_qty %>
-                <% @node.first_batch_days -> %>
-                  <%= @node.first_batch_days %>d
-                <% @node.first_batch_qty -> %>
-                  qty <%= @node.first_batch_qty %>
-                <% true -> %>
-                  —
+            <button
+              type="button"
+              phx-click="open_supplier_edit"
+              phx-value-id={@node.id}
+              class="min-w-0 flex-1 truncate text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-900 hover:text-indigo-600 dark:text-zinc-100 dark:hover:text-indigo-300"
+              title="Edit supplier"
+            >
+              <%= @node.vendor_name || (@node.vendor && @node.vendor.name) || @node.name %>
+            </button>
+            <%= if @node.location do %>
+              <span class="rounded border border-zinc-300 bg-zinc-100 px-1 py-0.5 text-[9px] font-medium text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                <%= @node.location %>
+              </span>
+            <% end %>
+            <div class="relative ml-auto flex shrink-0 items-center">
+              <button
+                type="button"
+                phx-click="toggle_card_menu"
+                phx-value-id={"n-#{@node.id}"}
+                class="inline-flex h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-50"
+                title="Card menu"
+                aria-label="Card menu"
+              >
+                <span class="text-[14px] leading-none tracking-tighter" aria-hidden="true">⋮</span>
+              </button>
+              <%= if @card_menu_id == "n-#{@node.id}" do %>
+                <div class="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800" role="menu">
+                  <a
+                    href={~p"/factory/projects/#{@factory.id}/nodes/#{@node.id}/pencil?seq=#{@sequence || @node.position}"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="block px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                    role="menuitem"
+                    data-phx-link="false"
+                  >
+                    Print pencil sheet
+                  </a>
+                </div>
               <% end %>
-            </span>
-            <span class="text-zinc-500 dark:text-zinc-400">Batch storage</span>
-            <span class="tabular-nums text-right">
-              <%= if @node.production_batch_slots, do: "#{@node.production_batch_slots} slots", else: "—" %>
-            </span>
-            <%= if @node.lead_time_days || @node.supply_cadence do %>
-              <span class="text-zinc-500 dark:text-zinc-400">Cadence</span>
-              <span class="tabular-nums text-right">
-                <%= [@node.supply_cadence, @node.lead_time_days && "lead #{@node.lead_time_days}d"]
-                    |> Enum.reject(&is_nil/1)
-                    |> Enum.join(" · ") %>
-              </span>
-            <% end %>
+            </div>
           </div>
+          <div class="py-0.5">
+            <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
+              Part
+            </div>
+            <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
+              <span class="text-zinc-500 dark:text-zinc-400">Part</span>
+              <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
+              <span class="text-zinc-500 dark:text-zinc-400">Order qty</span>
+              <span class="tabular-nums text-right"><%= if @node.first_batch_qty, do: @node.first_batch_qty, else: "—" %></span>
+              <span class="text-zinc-500 dark:text-zinc-400">Batch size</span>
+              <span class="tabular-nums text-right"><%= if @node.batch_size, do: @node.batch_size, else: "—" %></span>
+            </div>
 
-          <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
-            vs commitment
-          </div>
-          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
-            <span class="text-zinc-500 dark:text-zinc-400">Need</span>
-            <span class="tabular-nums text-right">
-              <%= if @vs.need_wk, do: "#{format_rate(@vs.need_wk)}/wk", else: "—" %>
-            </span>
-            <%= if @vs.need_after_setup do %>
-              <span class="text-zinc-500 dark:text-zinc-400">Need after setup</span>
-              <span class="tabular-nums text-right" title="If setup sits inside the window">
-                <%= format_rate(@vs.need_after_setup) %>/wk
-              </span>
+            <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
+              Steps
+            </div>
+            <%= for step <- @node.steps || [] do %>
+              <button
+                type="button"
+                phx-click="open_step_edit"
+                phx-value-id={step.id}
+                class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-2.5 py-1 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/30"
+              >
+                <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-bold tabular-nums text-zinc-400 dark:border-zinc-500 dark:text-zinc-300">
+                  <%= step.position %>
+                </span>
+                <span class="truncate font-medium text-zinc-700 dark:text-zinc-200"><%= step.name %></span>
+                <span class="tabular-nums text-[10px] text-zinc-400">
+                  <%= if step.duration_days, do: "#{step.duration_days}d", else: "—" %>
+                </span>
+              </button>
             <% end %>
-            <span class="text-zinc-500 dark:text-zinc-400">Designed</span>
-            <span class="tabular-nums text-right">
-              <%= if @vs.have_wk, do: "#{format_rate(@vs.have_wk)}/wk", else: "—" %>
-            </span>
-            <span class="text-zinc-500 dark:text-zinc-400">Gap</span>
-            <span class={
-              [
-                "tabular-nums text-right font-semibold",
+            <%= if @add_step_node_id == @node.id do %>
+              <form phx-submit="add_step" class="flex items-center gap-2 border-t border-dashed border-zinc-200 px-2.5 py-1.5 dark:border-zinc-600">
+                <input type="hidden" name="node_id" value={@node.id} />
+                <input
+                  type="text"
+                  name="name"
+                  placeholder="Step"
+                  autofocus
+                  class="min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+                <button type="submit" class="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400">Add</button>
+                <button type="button" phx-click="cancel_add_step" class="text-[10px] text-zinc-400">Cancel</button>
+              </form>
+            <% end %>
+            <%= if @add_step_node_id != @node.id do %>
+              <button
+                type="button"
+                phx-click="open_add_step"
+                phx-value-node_id={@node.id}
+                class="w-full border-t border-dashed border-zinc-200 px-2.5 py-1 text-left text-[10px] text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-indigo-500 dark:border-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-700/30 dark:hover:text-indigo-400"
+              >
+                + step
+              </button>
+            <% end %>
+
+            <%= if @eta do %>
+              <div class="flex items-center gap-1.5 border-t border-zinc-100 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-800 dark:border-zinc-700 dark:text-zinc-100">
+                <span class="text-zinc-400" aria-hidden="true">⏱</span>
+                <span>ETA at dock</span>
+                <span class="ml-auto tabular-nums"><%= format_eta(@eta) %></span>
+              </div>
+            <% end %>
+
+            <%= if @node.inspection_point do %>
+              <div class="border-t border-zinc-100 px-2.5 py-1 text-[11px] text-amber-700 dark:border-zinc-700 dark:text-amber-300">
+                Inspection gate
+              </div>
+            <% end %>
+            <%= if @node.note do %>
+              <p class="border-t border-zinc-100 px-2.5 py-1.5 text-[11px] leading-relaxed text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+                <%= @node.note %>
+              </p>
+            <% end %>
+          </div>
+          <div class="grid grid-cols-4 gap-px border-t border-zinc-200 bg-zinc-200 text-center dark:border-zinc-600 dark:bg-zinc-600">
+            <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Replenishment lead">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">RT</div>
+              <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100"><%= if @node.lead_time_days, do: "#{@node.lead_time_days}d", else: "—" %></div>
+            </div>
+            <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Throughput impact — TVC per unit">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">T</div>
+              <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100">—</div>
+            </div>
+            <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Working capital parked here">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">I</div>
+              <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100">—</div>
+            </div>
+            <div class={[
+              "bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700",
+              @vs.short? && "bg-amber-50 dark:bg-amber-950/30"
+            ]} title="Rope status: Need vs Designed">
+              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Gap</div>
+              <div class={[
+                "tabular-nums text-[11px] font-semibold",
                 @vs.short? && "text-amber-700 dark:text-amber-300",
-                !@vs.short? && @vs.gap_wk && "text-emerald-700 dark:text-emerald-300"
-              ]
-            }>
+                !@vs.short? && @vs.gap_wk && "text-emerald-700 dark:text-emerald-300",
+                is_nil(@vs.gap_wk) && "text-zinc-800 dark:text-zinc-100"
+              ]}>
+                <%= cond do %>
+                  <% is_nil(@vs.gap_wk) -> %>—
+                  <% @vs.short? -> %><%= format_rate(@vs.gap_wk) %>/wk
+                  <% @vs.gap_wk < 0 -> %>+<%= format_rate(abs(@vs.gap_wk)) %>/wk
+                  <% true -> %>ok
+                <% end %>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
+            <span class="tabular-nums">
               <%= cond do %>
-                <% is_nil(@vs.gap_wk) -> %>
-                  —
-                <% @vs.short? -> %>
-                  short <%= format_rate(@vs.gap_wk) %>/wk
-                <% @vs.gap_wk < 0 -> %>
-                  headroom <%= format_rate(abs(@vs.gap_wk)) %>/wk
+                <% @vs.have_wk && @vs.need_wk -> %>
+                  <%= format_rate(@vs.have_wk) %>/wk vs <%= format_rate(@vs.need_wk) %>
+                <% @node.setup_days -> %>
+                  Setup <%= @node.setup_days %>d
                 <% true -> %>
-                  matched
+                  Supplier
               <% end %>
             </span>
+            <button type="button" phx-click="delete_node" phx-value-id={@node.id} data-confirm={"Remove #{@node.name}? This cannot be undone."} class="text-zinc-400 hover:text-red-500" title="Remove">×</button>
           </div>
+                </div>
+              </div>
+              """
+            end
 
-          <%= if @vs.short? do %>
-            <div class="border-t border-zinc-100 px-2.5 py-1 text-[10px] leading-snug text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-              Design cannot cover commitment at this cadence. Elevate supply rate or change the promise.
-            </div>
-          <% end %>
-
-          <%= if @node.inspection_point do %>
-            <div class="border-t border-zinc-100 px-2.5 py-1 text-[11px] text-amber-700 dark:border-zinc-700 dark:text-amber-300">
-              Inspection gate
-            </div>
-          <% end %>
-          <%= if @node.note do %>
-            <p class="border-t border-zinc-100 px-2.5 py-1.5 text-[11px] leading-relaxed text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
-              <%= @node.note %>
-            </p>
-          <% end %>
-        </div>
-        <div class="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
-          <span class="tabular-nums">
-            <%= cond do %>
-              <% @vs.have_wk && @vs.need_wk -> %>
-                <%= format_rate(@vs.have_wk) %>/wk vs <%= format_rate(@vs.need_wk) %>
-              <% @node.setup_days -> %>
-                Setup <%= @node.setup_days %>d
-              <% true -> %>
-                Supplier
-            <% end %>
-          </span>
-          <button type="button" phx-click="delete_node" phx-value-id={@node.id} data-confirm={"Remove #{@node.name}? This cannot be undone."} class="text-zinc-400 hover:text-red-500" title="Remove">×</button>
-        </div>
-      </div>
-    </div>
-    """
-  end
-
-  defp transport_card(assigns) do
+            defp transport_card(assigns) do
     ship_label =
       case assigns.node.ship_weekday do
         nil -> nil
@@ -2077,10 +2147,13 @@ defp node_card(assigns) do
           nil
       end
 
+    eta = supply_eta(assigns.node)
+
     assigns =
       assigns
       |> assign(:ship_label, ship_label)
       |> assign(:transit_label, transit_label)
+      |> assign(:eta, eta)
 
     ~H"""
     <div data-node-id={@node.id} class="w-[18rem] md:w-[18.5rem] shrink-0">
@@ -2098,50 +2171,106 @@ defp node_card(assigns) do
           >
             <%= @node.name %>
           </button>
+          <%= if @node.vendor_name do %>
+            <span class="shrink-0 rounded border border-zinc-300 bg-white px-1 py-0.5 text-[9px] font-medium text-zinc-600 dark:border-zinc-500 dark:bg-zinc-800 dark:text-zinc-200">
+              <%= @node.vendor_name %>
+            </span>
+          <% end %>
         </div>
 
         <div class="py-0.5">
-          <%= if @node.vendor_name do %>
-            <div class="px-2.5 py-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-              <%= @node.vendor_name %>
-            </div>
-          <% end %>
-
           <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
-            Input
+            Load
           </div>
           <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
-            <span class="text-zinc-500 dark:text-zinc-400">Vendor</span>
-            <span class="text-right"><%= @node.vendor_name || (@node.vendor && @node.vendor.name) || "—" %></span>
-            <span class="text-zinc-500 dark:text-zinc-400">Part</span>
-            <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
-            <span class="text-zinc-500 dark:text-zinc-400">Batch</span>
-            <span class="text-right"><%= if @node.batch_size, do: "#{@node.batch_size} lbs", else: "—" %></span>
-          </div>
-
-          <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
-            Schedule
-          </div>
-          <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
-            <span class="text-zinc-500 dark:text-zinc-400">Route</span>
+            <span class="text-zinc-500 dark:text-zinc-400">Origin</span>
             <span class="text-right font-mono text-[10px]">
               <%= @node.from_location || "?" %> → <%= @node.to_location || "?" %>
             </span>
-            <span class="text-zinc-500 dark:text-zinc-400">Transit</span>
-            <span class="tabular-nums text-right"><%= @transit_label || "—" %></span>
-            <span class="text-zinc-500 dark:text-zinc-400">Batch size</span>
-            <span class="tabular-nums text-right">
-              <%= if @node.batch_size, do: @node.batch_size, else: "—" %>
-            </span>
+            <span class="text-zinc-500 dark:text-zinc-400">Part</span>
+            <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
+            <span class="text-zinc-500 dark:text-zinc-400">Batch</span>
+            <span class="tabular-nums text-right"><%= if @node.batch_size, do: @node.batch_size, else: "—" %></span>
             <span class="text-zinc-500 dark:text-zinc-400">Ship rule</span>
             <span class="tabular-nums text-right"><%= @ship_label || "—" %></span>
           </div>
 
-          <%= if @node.batch_size && @ship_label do %>
-            <div class="border-t border-zinc-100 px-2.5 py-1.5 text-[11px] text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
-              Pickup <%= @node.batch_size %> frames · <%= String.downcase(@ship_label) %>
+          <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
+            Steps
+          </div>
+          <%= for step <- @node.steps || [] do %>
+            <button
+              type="button"
+              phx-click="open_step_edit"
+              phx-value-id={step.id}
+              class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-2.5 py-1 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/30"
+            >
+              <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-bold tabular-nums text-zinc-400 dark:border-zinc-500 dark:text-zinc-300">
+                <%= step.position %>
+              </span>
+              <span class="truncate font-medium text-zinc-700 dark:text-zinc-200"><%= step.name %></span>
+              <span class="tabular-nums text-[10px] text-zinc-400">
+                <%= if step.duration_days, do: "#{step.duration_days}d", else: "—" %>
+              </span>
+            </button>
+          <% end %>
+          <%= if @add_step_node_id == @node.id do %>
+            <form phx-submit="add_step" class="flex items-center gap-2 border-t border-dashed border-zinc-200 px-2.5 py-1.5 dark:border-zinc-600">
+              <input type="hidden" name="node_id" value={@node.id} />
+              <input
+                type="text"
+                name="name"
+                placeholder="Step"
+                autofocus
+                class="min-w-0 flex-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              <button type="submit" class="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400">Add</button>
+              <button type="button" phx-click="cancel_add_step" class="text-[10px] text-zinc-400">Cancel</button>
+            </form>
+          <% end %>
+          <%= if @add_step_node_id != @node.id do %>
+            <button
+              type="button"
+              phx-click="open_add_step"
+              phx-value-node_id={@node.id}
+              class="w-full border-t border-dashed border-zinc-200 px-2.5 py-1 text-left text-[10px] text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-indigo-500 dark:border-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-700/30 dark:hover:text-indigo-400"
+            >
+              + step
+            </button>
+          <% end %>
+
+          <%= if @eta do %>
+            <div class="flex items-center gap-1.5 border-t border-zinc-100 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-800 dark:border-zinc-700 dark:text-zinc-100">
+              <span class="text-zinc-400" aria-hidden="true">⏱</span>
+              <span>ETA at destination</span>
+              <span class="ml-auto tabular-nums"><%= format_eta(@eta) %></span>
             </div>
           <% end %>
+
+          <%= if @node.note do %>
+            <p class="border-t border-zinc-100 px-2.5 py-1.5 text-[11px] leading-relaxed text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+              <%= @node.note %>
+            </p>
+          <% end %>
+        </div>
+
+        <div class="grid grid-cols-4 gap-px border-t border-zinc-200 bg-zinc-200 text-center dark:border-zinc-600 dark:bg-zinc-600">
+          <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Transit contribution to replenishment time">
+            <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">RT</div>
+            <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100"><%= @transit_label || "—" %></div>
+          </div>
+          <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Freight cost per shipment (TVC)">
+            <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">$/ship</div>
+            <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100">—</div>
+          </div>
+          <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Working capital en route (batch × TVC)">
+            <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">$ en route</div>
+            <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100">—</div>
+          </div>
+          <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Shipments per week">
+            <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">/wk</div>
+            <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100"><%= if @node.batch_size && @ship_label, do: @node.batch_size, else: "—" %></div>
+          </div>
         </div>
 
         <div class="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
