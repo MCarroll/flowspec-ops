@@ -10,6 +10,7 @@ defmodule FlowspecOps.Parts.Part do
     field :unit_cost_cents, :integer
     field :unit_of_measure, :string
     field :fake, :boolean, default: false
+    field :provisional, :boolean, default: false
     field :specs, :map, default: %{}
 
     belongs_to :vendor, FlowspecOps.Vendors.Vendor
@@ -20,7 +21,7 @@ defmodule FlowspecOps.Parts.Part do
 
   def changeset(part, attrs) do
     part
-    |> cast(attrs, [:name, :part_number, :kind, :description, :unit_cost_cents, :unit_of_measure, :vendor_id, :fake, :specs])
+    |> cast(attrs, [:name, :part_number, :kind, :description, :unit_cost_cents, :unit_of_measure, :vendor_id, :fake, :provisional, :specs])
     |> validate_required([:name, :kind])
     |> validate_number(:unit_cost_cents, greater_than_or_equal_to: 0)
   end

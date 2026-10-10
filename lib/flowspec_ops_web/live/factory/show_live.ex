@@ -41,6 +41,7 @@ def mount(%{"id" => id}, _session, socket) do
              transport_edit_id: nil,
       supplier_edit_id: nil,
       supplier_vendor_id: nil,
+      part_drawer_open: false,
 versions: Factories.list_versions(factory.id),
        versions_open: false,
        save_version_open: false,
@@ -627,6 +628,41 @@ def handle_event("cancel_commitment_edit", _params, socket) do
   end
 
   @impl true
+  def handle_event("open_part_drawer", _params, socket) do
+    {:noreply, assign(socket, part_drawer_open: true)}
+  end
+
+  @impl true
+  def handle_event("close_part_drawer", _params, socket) do
+    {:noreply, assign(socket, part_drawer_open: false)}
+  end
+
+  @impl true
+  def handle_event("save_part", params, socket) do
+    vendor_id = parse_optional_id(Map.get(params, "vendor_id"))
+    provisional = Map.get(params, "provisional") == "on"
+
+    attrs = %{
+      name: Map.get(params, "name", "") |> String.trim(),
+      part_number: blank_to_nil(Map.get(params, "part_number")),
+      kind: String.to_atom(Map.get(params, "kind", "component")),
+      unit_of_measure: blank_to_nil(Map.get(params, "unit_of_measure")),
+      vendor_id: vendor_id,
+      provisional: provisional
+    }
+
+    case Parts.create_part(attrs) do
+      {:ok, _part} ->
+        {:noreply,
+         reload_factory(socket)
+         |> assign(part_drawer_open: false, parts: Parts.list_parts())}
+
+      {:error, _} ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_event("open_supplier_edit", %{"id" => id}, socket) do
     node = Enum.find(socket.assigns.factory.nodes, &(&1.id == String.to_integer(id)))
     {:noreply, assign(socket, supplier_edit_id: String.to_integer(id), supplier_vendor_id: node && node.vendor_id, step_edit_id: nil)}
@@ -770,6 +806,7 @@ def handle_event("cancel_commitment_edit", _params, socket) do
         :if={@supplier_edit_id}
         factory={@factory}
         supplier_edit_id={@supplier_edit_id}
+        supplier_vendor_id={@supplier_vendor_id}
         vendors={@vendors}
         parts={@parts}
       />
@@ -779,6 +816,11 @@ def handle_event("cancel_commitment_edit", _params, socket) do
         add_node_kind={@add_node_kind}
         add_node_name={@add_node_name}
         add_node_line_id={@add_node_line_id}
+      />
+      <.part_drawer
+        :if={@part_drawer_open}
+        vendor_id={@supplier_vendor_id}
+        vendors={@vendors}
       />
     </div>
     """
@@ -4110,7 +4152,75 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
     """
       end
 
-      defp add_node_modal(assigns) do
+      defp part_drawer(assigns) do
+    ~H"""
+    <div class="fixed inset-0 z-50">
+      <div class="absolute inset-0 bg-zinc-900/40" phx-click="close_part_drawer"></div>
+      <div class="absolute right-0 top-0 h-full w-full max-w-sm overflow-y-auto border-l border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">New part</h3>
+          <button type="button" phx-click="close_part_drawer" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200" aria-label="Close">×</button>
+        </div>
+        <p class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">Add a part for this vendor.</p>
+
+        <form phx-submit="save_part" class="mt-3 space-y-3">
+          <label class="block">
+            <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Vendor</span>
+            <select name="vendor_id" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
+              <option value="">—</option>
+              <%= for v <- @vendors do %>
+                <option value={v.id} selected={@vendor_id == v.id}><%= v.name %></option>
+              <% end %>
+            </select>
+          </label>
+
+          <label class="block">
+            <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Name</span>
+            <input type="text" name="name" required placeholder="e.g. iMod Frame Base" autofocus class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+          </label>
+
+          <label class="block">
+            <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Part number</span>
+            <input type="text" name="part_number" placeholder="e.g. IM-8x20" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+            <span class="mt-1 block text-[10px] text-amber-600 dark:text-amber-400">Correct part number needed before this part ships.</span>
+          </label>
+
+          <div class="flex gap-2">
+            <label class="block flex-1">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Kind</span>
+              <select name="kind" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
+                <option value="raw_material">Raw material</option>
+                <option value="component" selected>Component</option>
+                <option value="sub_assembly">Sub-assembly</option>
+                <option value="assembly">Assembly</option>
+              </select>
+            </label>
+            <label class="block flex-1">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Unit</span>
+              <input type="text" name="unit_of_measure" placeholder="piece / lb" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+            </label>
+          </div>
+
+          <label class="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-200">
+            <input type="checkbox" name="provisional" class="rounded border-zinc-300 dark:border-zinc-600" />
+            Provisional part — placeholder until the real part is defined
+          </label>
+
+          <div class="flex items-center justify-end gap-2 pt-1">
+            <button type="button" phx-click="close_part_drawer" class="px-2 py-1 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400">
+              Cancel
+            </button>
+            <button type="submit" class="rounded bg-zinc-900 px-3 py-1 text-xs font-semibold text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">
+              Save part
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+    """
+  end
+
+  defp add_node_modal(assigns) do
     ~H"""
     <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div class="absolute inset-0 bg-zinc-900/40" phx-click="cancel_add_node"></div>
@@ -4190,12 +4300,22 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
 
                   <label class="block">
                     <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Part</span>
-                    <select name="part_id" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
-                      <option value="">—</option>
-                      <%= for p <- @parts do %>
-                        <option value={p.id} selected={@node.part_id == p.id}><%= p.name %></option>
-                      <% end %>
-                    </select>
+                    <div class="mt-1 flex gap-1">
+                      <select name="part_id" class="w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100">
+                        <option value="">—</option>
+                        <%= for p <- @parts do %>
+                          <option value={p.id} selected={@node.part_id == p.id}><%= p.name %></option>
+                        <% end %>
+                      </select>
+                      <button
+                        type="button"
+                        phx-click="open_part_drawer"
+                        class="shrink-0 rounded border border-zinc-300 px-2 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        title="New part"
+                      >
+                        +
+                      </button>
+                    </div>
                   </label>
 
                 <div class="flex gap-2">
