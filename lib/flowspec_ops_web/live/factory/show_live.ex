@@ -1895,9 +1895,11 @@ defp versions_panel(assigns) do
   defp node_card(%{node: %{kind: :transport}} = assigns) do
     ~H"""
     <.transport_card
+      factory={@factory}
       node={@node}
       sequence={@sequence}
       add_step_node_id={@add_step_node_id}
+      card_menu_id={@card_menu_id}
       scroll_to_node_id={@scroll_to_node_id}
     />
     """
@@ -1964,12 +1966,13 @@ defp node_card(assigns) do
             <button
               type="button"
               phx-click="open_supplier_edit"
-              phx-value-id={@node.id}
-              class="min-w-0 flex-1 truncate text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-900 hover:text-indigo-600 dark:text-zinc-100 dark:hover:text-indigo-300"
-              title="Edit supplier"
-            >
-              <%= @node.vendor_name || (@node.vendor && @node.vendor.name) || @node.name %>
-            </button>
+                            phx-value-id={@node.id}
+                            class="flex min-w-0 flex-1 items-center gap-1 truncate text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-900 hover:text-indigo-600 dark:text-zinc-100 dark:hover:text-indigo-300"
+                            title="Edit supplier"
+                          >
+                            <span class="truncate"><%= @node.vendor_name || (@node.vendor && @node.vendor.name) || @node.name %></span>
+                            <span class="shrink-0 text-[9px] text-zinc-400" aria-hidden="true">▾</span>
+                          </button>
             <%= if @node.location do %>
               <span class="rounded border border-zinc-300 bg-zinc-100 px-1 py-0.5 text-[9px] font-medium text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
                 <%= @node.location %>
@@ -1988,6 +1991,14 @@ defp node_card(assigns) do
               </button>
               <%= if @card_menu_id == "n-#{@node.id}" do %>
                 <div class="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800" role="menu">
+                  <button
+                    type="button"
+                    phx-click="open_add_node"
+                    class="block w-full px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                    role="menuitem"
+                  >
+                    Add card
+                  </button>
                   <a
                     href={~p"/factory/projects/#{@factory.id}/nodes/#{@node.id}/pencil?seq=#{@sequence || @node.position}"}
                     target="_blank"
@@ -2078,40 +2089,35 @@ defp node_card(assigns) do
               </p>
             <% end %>
           </div>
-          <div class="grid grid-cols-4 gap-px border-t border-zinc-200 bg-zinc-200 text-center dark:border-zinc-600 dark:bg-zinc-600">
-            <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Replenishment lead">
-              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">RT</div>
-              <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100"><%= if @node.lead_time_days, do: "#{@node.lead_time_days}d", else: "—" %></div>
-            </div>
-            <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Throughput impact — TVC per unit">
-              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">T</div>
-              <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100">—</div>
-            </div>
-            <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Working capital parked here">
-              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">I</div>
-              <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100">—</div>
-            </div>
-            <div class={[
-              "bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700",
-              @vs.short? && "bg-amber-50 dark:bg-amber-950/30"
-            ]} title="Rope status: Need vs Designed">
-              <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Gap</div>
-              <div class={[
-                "tabular-nums text-[11px] font-semibold",
-                @vs.short? && "text-amber-700 dark:text-amber-300",
-                !@vs.short? && @vs.gap_wk && "text-emerald-700 dark:text-emerald-300",
-                is_nil(@vs.gap_wk) && "text-zinc-800 dark:text-zinc-100"
-              ]}>
-                <%= cond do %>
-                  <% is_nil(@vs.gap_wk) -> %>—
-                  <% @vs.short? -> %><%= format_rate(@vs.gap_wk) %>/wk
-                  <% @vs.gap_wk < 0 -> %>+<%= format_rate(abs(@vs.gap_wk)) %>/wk
-                  <% true -> %>ok
-                <% end %>
-              </div>
-            </div>
-          </div>
-          <div class="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
+          <div class="grid grid-cols-3 gap-px border-t border-zinc-200 bg-zinc-200 text-center dark:border-zinc-600 dark:bg-zinc-600">
+                      <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Commitment need per week">
+                        <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Need</div>
+                        <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100"><%= if @vs.need_wk, do: "#{format_rate(@vs.need_wk)}/wk", else: "—" %></div>
+                      </div>
+                      <div class="bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700" title="Designed supply cadence per week">
+                        <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Cadence</div>
+                        <div class="tabular-nums text-[11px] font-semibold text-zinc-800 dark:text-zinc-100"><%= if @vs.have_wk, do: "#{format_rate(@vs.have_wk)}/wk", else: "—" %></div>
+                      </div>
+                      <div class={[
+                        "bg-zinc-50 px-1 py-1.5 dark:bg-zinc-700",
+                        @vs.short? && "bg-amber-50 dark:bg-amber-950/30"
+                      ]} title="Rope status: Need vs Cadence">
+                        <div class="text-[9px] font-semibold uppercase tracking-wide text-zinc-400">Gap</div>
+                        <div class={[
+                          "tabular-nums text-[11px] font-semibold",
+                          @vs.short? && "text-amber-700 dark:text-amber-300",
+                          !@vs.short? && @vs.gap_wk && "text-emerald-700 dark:text-emerald-300",
+                          is_nil(@vs.gap_wk) && "text-zinc-800 dark:text-zinc-100"
+                        ]}>
+                          <%= cond do %>
+                            <% is_nil(@vs.gap_wk) -> %>—
+                            <% @vs.short? -> %><%= format_rate(@vs.gap_wk) %>/wk
+                            <% @vs.gap_wk < 0 -> %>+<%= format_rate(abs(@vs.gap_wk)) %>/wk
+                            <% true -> %>ok
+                          <% end %>
+                        </div>
+                      </div>    </div>
+                                <div class="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100">
             <span class="tabular-nums">
               <%= cond do %>
                 <% @vs.have_wk && @vs.need_wk -> %>
@@ -2166,16 +2172,56 @@ defp node_card(assigns) do
             type="button"
             phx-click="open_transport_edit"
             phx-value-id={@node.id}
-            class="min-w-0 flex-1 truncate text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-900 hover:text-indigo-600 dark:text-zinc-100 dark:hover:text-indigo-300"
+            class="flex min-w-0 flex-1 items-center gap-1 truncate text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-900 hover:text-indigo-600 dark:text-zinc-100 dark:hover:text-indigo-300"
             title="Edit transport"
           >
-            <%= @node.name %>
+            <span class="truncate"><%= @node.name %></span>
+            <span class="shrink-0 text-[9px] text-zinc-400" aria-hidden="true">▾</span>
           </button>
           <%= if @node.vendor_name do %>
             <span class="shrink-0 rounded border border-zinc-300 bg-white px-1 py-0.5 text-[9px] font-medium text-zinc-600 dark:border-zinc-500 dark:bg-zinc-800 dark:text-zinc-200">
               <%= @node.vendor_name %>
             </span>
           <% end %>
+          <%= if @node.to_location do %>
+            <span class="shrink-0 rounded border border-zinc-300 bg-white px-1 py-0.5 text-[9px] font-medium text-zinc-600 dark:border-zinc-500 dark:bg-zinc-800 dark:text-zinc-200" title="Destination">
+              <%= @node.to_location %>
+            </span>
+          <% end %>
+          <div class="relative ml-auto flex shrink-0 items-center">
+            <button
+              type="button"
+              phx-click="toggle_card_menu"
+              phx-value-id={"n-#{@node.id}"}
+              class="inline-flex h-5 w-5 items-center justify-center rounded text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-600 dark:hover:text-zinc-50"
+              title="Card menu"
+              aria-label="Card menu"
+            >
+              <span class="text-[14px] leading-none tracking-tighter" aria-hidden="true">⋮</span>
+            </button>
+            <%= if @card_menu_id == "n-#{@node.id}" do %>
+              <div class="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-800" role="menu">
+                <button
+                  type="button"
+                  phx-click="open_add_node"
+                  class="block w-full px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                  role="menuitem"
+                >
+                  Add card
+                </button>
+                <a
+                  href={~p"/factory/projects/#{@factory.id}/nodes/#{@node.id}/pencil?seq=#{@sequence || @node.position}"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="block px-3 py-1.5 text-left text-[11px] font-medium text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                  role="menuitem"
+                  data-phx-link="false"
+                >
+                  Print pencil sheet
+                </a>
+              </div>
+            <% end %>
+          </div>
         </div>
 
         <div class="py-0.5">
