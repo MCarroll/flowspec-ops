@@ -37,7 +37,7 @@ def mount(%{"id" => id}, _session, socket) do
        commitment_edit_open: false,
        commitment_edit_line_id: nil,
              step_edit_id: nil,
-             step_inline_id: nil,
+                         step_inline: nil,
              station_edit_id: nil,
              transport_edit_id: nil,
       supplier_edit_id: nil,
@@ -468,31 +468,35 @@ def handle_event("cancel_commitment_edit", _params, socket) do
   end
 
   @impl true
-  def handle_event("start_step_inline_duration", %{"id" => id}, socket) do
-    {:noreply, assign(socket, step_inline_id: String.to_integer(id))}
+  def handle_event("start_step_inline", %{"id" => id, "field" => field}, socket) do
+    {:noreply, assign(socket, step_inline: %{id: String.to_integer(id), field: String.to_atom(field)})}
   end
 
   @impl true
-  def handle_event("cancel_step_inline_duration", _params, socket) do
-    {:noreply, assign(socket, step_inline_id: nil)}
+  def handle_event("cancel_step_inline", _params, socket) do
+    {:noreply, assign(socket, step_inline: nil)}
   end
 
   @impl true
-  def handle_event("save_step_inline_duration", params, socket) do
-    raw_id = params["step_id"] || params["step-id"]
-    step_id = String.to_integer(raw_id)
-    all_steps = socket.assigns.factory.nodes |> Enum.flat_map(& &1.steps)
-    step = Enum.find(all_steps, &(&1.id == step_id))
+  def handle_event("save_step_inline", params, socket) do
+    with %{id: edit_id, field: field} <- socket.assigns.step_inline,
+         raw_id when not is_nil(raw_id) <- params["step_id"] || params["step-id"],
+         step_id when is_integer(step_id) <- String.to_integer(raw_id),
+         step when not is_nil(step) <- Enum.find(
+           socket.assigns.factory.nodes |> Enum.flat_map(& &1.steps), &(&1.id == step_id)
+         ) do
+      attrs =
+        case field do
+          :name -> %{name: params |> Map.get("name", step.name) |> String.trim()}
+          :duration -> %{duration_days: parse_duration_days(Map.get(params, "duration") || Map.get(params, "value"))}
+        end
 
-    if step do
-      days = parse_duration_days(Map.get(params, "duration"))
-
-      case Factories.update_step(step, %{duration_days: days}) do
-        {:ok, _} -> {:noreply, reload_factory(socket) |> assign(step_inline_id: nil)}
+      case Factories.update_step(step, attrs) do
+        {:ok, _} -> {:noreply, reload_factory(socket) |> assign(step_inline: nil)}
         {:error, _} -> {:noreply, socket}
       end
     else
-      {:noreply, socket}
+      _ -> {:noreply, socket}
     end
   end
 
@@ -831,7 +835,7 @@ def handle_event("cancel_commitment_edit", _params, socket) do
             add_step_node_id={@add_step_node_id}
             add_step_name={@add_step_name}
             card_menu_id={@card_menu_id}
-            step_inline_id={@step_inline_id}
+            step_inline={@step_inline}
             scroll_to_node_id={@scroll_to_node_id}
             sdbr_expanded={@sdbr_expanded}
                         sdbr_help_open={@sdbr_help_open}
@@ -1767,7 +1771,7 @@ defp versions_panel(assigns) do
             add_step_node_id={@add_step_node_id}
             add_step_name={@add_step_name}
             card_menu_id={@card_menu_id}
-            step_inline_id={@step_inline_id}
+            step_inline={@step_inline}
             scroll_to_node_id={@scroll_to_node_id}
           />
         <% end %>
@@ -1788,7 +1792,7 @@ defp versions_panel(assigns) do
                 add_step_node_id={@add_step_node_id}
                 add_step_name={@add_step_name}
                 card_menu_id={@card_menu_id}
-                step_inline_id={@step_inline_id}
+                step_inline={@step_inline}
               />
             <% end %>
           </div>
@@ -1858,7 +1862,7 @@ defp versions_panel(assigns) do
                 add_step_node_id={@add_step_node_id}
                 add_step_name={@add_step_name}
                 card_menu_id={@card_menu_id}
-                step_inline_id={@step_inline_id}
+                step_inline={@step_inline}
                 scroll_to_node_id={@scroll_to_node_id}
               />
           <% end %>
@@ -2062,7 +2066,7 @@ defp versions_panel(assigns) do
       sequence={@sequence}
       add_step_node_id={@add_step_node_id}
       card_menu_id={@card_menu_id}
-      step_inline_id={@step_inline_id}
+      step_inline={@step_inline}
       scroll_to_node_id={@scroll_to_node_id}
     />
     """
@@ -2076,7 +2080,7 @@ defp versions_panel(assigns) do
       sequence={@sequence}
       add_step_node_id={@add_step_node_id}
       card_menu_id={@card_menu_id}
-      step_inline_id={@step_inline_id}
+      step_inline={@step_inline}
       scroll_to_node_id={@scroll_to_node_id}
     />
     """
@@ -2216,42 +2220,70 @@ defp node_card(assigns) do
                 <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-bold tabular-nums text-zinc-400 dark:border-zinc-500 dark:text-zinc-300">
                   <%= step.position %>
                 </span>
-                <button
-                  type="button"
-                  phx-click="open_step_edit"
-                  phx-value-id={step.id}
-                  class="truncate text-left font-medium text-zinc-700 hover:text-indigo-600 dark:text-zinc-200 dark:hover:text-indigo-300"
-                >
-                  <%= step.name %>
-                </button>
-                <%= if @step_inline_id == step.id do %>
-                  <form phx-submit="save_step_inline_duration" class="contents">
-                    <input type="hidden" name="step_id" value={step.id} />
+                <%= if @step_inline && @step_inline.id == step.id && @step_inline.field == :name do %>
+                  <form phx-submit="save_step_inline" class="contents">
                     <input
                       type="text"
-                      name="duration"
-                      value={if step.duration_days, do: format_duration_days(step.duration_days), else: ""}
-                      placeholder="1w"
+                      name="name"
+                      value={step.name}
                       phx-hook="AutoSelect"
-                      id={"step-inline-duration-#{step.id}"}
-                      phx-blur="save_step_inline_duration"
+                      id={"step-inline-name-#{step.id}"}
+                      phx-blur="save_step_inline"
                       phx-value-step-id={step.id}
-                      phx-keydown="cancel_step_inline_duration"
+                      phx-keydown="cancel_step_inline"
                       phx-key="Escape"
-                      class="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-right text-[10px] tabular-nums outline-none focus:ring-1 focus:ring-indigo-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                      class="h-5 w-full min-w-0 rounded border border-indigo-400 bg-white px-1 text-left text-[11px] outline-none focus:ring-1 focus:ring-indigo-400 dark:border-indigo-500 dark:bg-zinc-800 dark:text-zinc-100"
                     />
                   </form>
                 <% else %>
                   <button
                     type="button"
-                    phx-click="start_step_inline_duration"
+                    phx-click="start_step_inline"
                     phx-value-id={step.id}
-                    class="tabular-nums text-[10px] text-zinc-400 hover:text-indigo-500 dark:text-zinc-500 dark:hover:text-indigo-400"
-                    title="Edit duration"
+                    phx-value-field="name"
+                    class="truncate text-left font-medium text-zinc-700 hover:text-indigo-600 dark:text-zinc-200 dark:hover:text-indigo-300"
                   >
-                    <%= if step.duration_days, do: format_duration_days(step.duration_days), else: "—" %>
+                    <%= step.name %>
                   </button>
                 <% end %>
+                <div class="flex shrink-0 items-center gap-0.5">
+                  <%= if @step_inline && @step_inline.id == step.id && @step_inline.field == :duration do %>
+                    <form phx-submit="save_step_inline" class="contents">
+                      <input
+                        type="text"
+                        name="duration"
+                        value={if step.duration_days, do: format_duration_days(step.duration_days), else: ""}
+                        placeholder="1w"
+                        phx-hook="AutoSelect"
+                        id={"step-inline-duration-#{step.id}"}
+                        phx-blur="save_step_inline"
+                        phx-value-step-id={step.id}
+                        phx-keydown="cancel_step_inline"
+                        phx-key="Escape"
+                        class="h-5 w-14 rounded border border-indigo-400 bg-white px-1 text-right text-[11px] tabular-nums outline-none focus:ring-1 focus:ring-indigo-400 dark:border-indigo-500 dark:bg-zinc-800 dark:text-zinc-100"
+                      />
+                    </form>
+                  <% else %>
+                    <button
+                      type="button"
+                      phx-click="start_step_inline"
+                      phx-value-id={step.id}
+                      phx-value-field="duration"
+                      class="tabular-nums text-[10px] text-zinc-400 hover:text-indigo-500 dark:text-zinc-500 dark:hover:text-indigo-400"
+                      title="Edit duration"
+                    >
+                      <%= if step.duration_days, do: format_duration_days(step.duration_days), else: "—" %>
+                    </button>
+                  <% end %>
+                  <button
+                    type="button"
+                    phx-click="open_step_edit"
+                    phx-value-id={step.id}
+                    aria-label="Edit step details"
+                    class="shrink-0 px-0.5 text-[11px] leading-none text-zinc-300 hover:text-indigo-500 dark:text-zinc-600 dark:hover:text-indigo-400"
+                    title="Details"
+                  >⋯</button>
+                </div>
               </div>
             <% end %>
             <%= if @add_step_node_id == @node.id do %>
@@ -2468,42 +2500,70 @@ defp node_card(assigns) do
               <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-bold tabular-nums text-zinc-400 dark:border-zinc-500 dark:text-zinc-300">
                 <%= step.position %>
               </span>
-              <button
-                type="button"
-                phx-click="open_step_edit"
-                phx-value-id={step.id}
-                class="truncate text-left font-medium text-zinc-700 hover:text-indigo-600 dark:text-zinc-200 dark:hover:text-indigo-300"
-              >
-                <%= step.name %>
-              </button>
-              <%= if @step_inline_id == step.id do %>
-                <form phx-submit="save_step_inline_duration" class="contents">
-                  <input type="hidden" name="step_id" value={step.id} />
+              <%= if @step_inline && @step_inline.id == step.id && @step_inline.field == :name do %>
+                <form phx-submit="save_step_inline" class="contents">
                   <input
                     type="text"
-                    name="duration"
-                    value={if step.duration_days, do: format_duration_days(step.duration_days), else: ""}
-                    placeholder="1w"
+                    name="name"
+                    value={step.name}
                     phx-hook="AutoSelect"
-                    id={"step-inline-duration-#{step.id}"}
-                    phx-blur="save_step_inline_duration"
+                    id={"step-inline-name-#{step.id}"}
+                    phx-blur="save_step_inline"
                     phx-value-step-id={step.id}
-                    phx-keydown="cancel_step_inline_duration"
+                    phx-keydown="cancel_step_inline"
                     phx-key="Escape"
-                    class="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-right text-[10px] tabular-nums outline-none focus:ring-1 focus:ring-indigo-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                    class="h-5 w-full min-w-0 rounded border border-indigo-400 bg-white px-1 text-left text-[11px] outline-none focus:ring-1 focus:ring-indigo-400 dark:border-indigo-500 dark:bg-zinc-800 dark:text-zinc-100"
                   />
                 </form>
               <% else %>
                 <button
                   type="button"
-                  phx-click="start_step_inline_duration"
+                  phx-click="start_step_inline"
                   phx-value-id={step.id}
-                  class="tabular-nums text-[10px] text-zinc-400 hover:text-indigo-500 dark:text-zinc-500 dark:hover:text-indigo-400"
-                  title="Edit duration"
+                  phx-value-field="name"
+                  class="truncate text-left font-medium text-zinc-700 hover:text-indigo-600 dark:text-zinc-200 dark:hover:text-indigo-300"
                 >
-                  <%= if step.duration_days, do: format_duration_days(step.duration_days), else: "—" %>
+                  <%= step.name %>
                 </button>
               <% end %>
+              <div class="flex shrink-0 items-center gap-0.5">
+                <%= if @step_inline && @step_inline.id == step.id && @step_inline.field == :duration do %>
+                  <form phx-submit="save_step_inline" class="contents">
+                    <input
+                      type="text"
+                      name="duration"
+                      value={if step.duration_days, do: format_duration_days(step.duration_days), else: ""}
+                      placeholder="1w"
+                      phx-hook="AutoSelect"
+                      id={"step-inline-duration-#{step.id}"}
+                      phx-blur="save_step_inline"
+                      phx-value-step-id={step.id}
+                      phx-keydown="cancel_step_inline"
+                      phx-key="Escape"
+                      class="h-5 w-14 rounded border border-indigo-400 bg-white px-1 text-right text-[11px] tabular-nums outline-none focus:ring-1 focus:ring-indigo-400 dark:border-indigo-500 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                  </form>
+                <% else %>
+                  <button
+                    type="button"
+                    phx-click="start_step_inline"
+                    phx-value-id={step.id}
+                    phx-value-field="duration"
+                    class="tabular-nums text-[10px] text-zinc-400 hover:text-indigo-500 dark:text-zinc-500 dark:hover:text-indigo-400"
+                    title="Edit duration"
+                  >
+                    <%= if step.duration_days, do: format_duration_days(step.duration_days), else: "—" %>
+                  </button>
+                <% end %>
+                <button
+                  type="button"
+                  phx-click="open_step_edit"
+                  phx-value-id={step.id}
+                  aria-label="Edit step details"
+                  class="shrink-0 px-0.5 text-[11px] leading-none text-zinc-300 hover:text-indigo-500 dark:text-zinc-600 dark:hover:text-indigo-400"
+                  title="Details"
+                >⋯</button>
+              </div>
             </div>
           <% end %>
           <%= if @add_step_node_id == @node.id do %>
