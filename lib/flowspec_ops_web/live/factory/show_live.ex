@@ -36,7 +36,8 @@ def mount(%{"id" => id}, _session, socket) do
        sdbr_help_open: false,
        commitment_edit_open: false,
        commitment_edit_line_id: nil,
-       step_edit_id: nil,
+             step_edit_id: nil,
+             step_inline_id: nil,
              station_edit_id: nil,
              transport_edit_id: nil,
       supplier_edit_id: nil,
@@ -289,6 +290,17 @@ def handle_event("cancel_commitment_edit", _params, socket) do
   end
 
   @impl true
+  def handle_event("insert_default_supplier_steps", %{"id" => id}, socket) do
+    node = Enum.find(socket.assigns.factory.nodes, &(&1.id == String.to_integer(id)))
+
+    if node && Enum.empty?(node.steps || []) do
+      seed_supplier_steps(node)
+    end
+
+    {:noreply, reload_factory(socket)}
+  end
+
+  @impl true
   def handle_event("delete_node", %{"id" => id}, socket) do
     node = Enum.find(socket.assigns.factory.nodes, &(to_string(&1.id) == id))
 
@@ -421,23 +433,63 @@ def handle_event("cancel_commitment_edit", _params, socket) do
       parallel_id = if parallel_id == step_id, do: nil, else: parallel_id
 
       attrs = %{
-        name: params |> Map.get("name", step.name) |> String.trim(),
-        qty_per_unit: qty,
-        minutes_each: each,
-        people: people,
-        estimated_minutes: est,
-        specs: blank_to_nil(Map.get(params, "specs")),
-        shared: checkbox_true?(params, "shared"),
-        parallel_with_step_id: parallel_id
-      }
+              name: params |> Map.get("name", step.name) |> String.trim(),
+              qty_per_unit: qty,
+              minutes_each: each,
+              people: people,
+              estimated_minutes: est,
+              specs: blank_to_nil(Map.get(params, "specs")),
+              shared: checkbox_true?(params, "shared"),
+              parallel_with_step_id: parallel_id,
+              duration_days: parse_duration_days(Map.get(params, "duration"))
+            }
 
-      case Factories.update_step(step, attrs) do
+            # Supply steps: date lives on the node (order_date anchors the chain).
+            node = Enum.find(socket.assigns.factory.nodes, &(&1.id == step.factory_node_id))
+
+            attrs =
+              if node && node.kind in [:supplier, :transport] do
+                Map.put(attrs, :duration_days, parse_duration_days(Map.get(params, "duration")))
+              else
+                Map.delete(attrs, :duration_days)
+              end
+
+            case Factories.update_step(step, attrs) do
         {:ok, _} ->
           # Keep popup open so cycle math updates live; Close dismisses.
           {:noreply, reload_factory(socket) |> assign(step_edit_id: step_id)}
 
         {:error, _} ->
           {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("start_step_inline_duration", %{"id" => id}, socket) do
+    {:noreply, assign(socket, step_inline_id: String.to_integer(id))}
+  end
+
+  @impl true
+  def handle_event("cancel_step_inline_duration", _params, socket) do
+    {:noreply, assign(socket, step_inline_id: nil)}
+  end
+
+  @impl true
+  def handle_event("save_step_inline_duration", params, socket) do
+    raw_id = params["step_id"] || params["step-id"]
+    step_id = String.to_integer(raw_id)
+    all_steps = socket.assigns.factory.nodes |> Enum.flat_map(& &1.steps)
+    step = Enum.find(all_steps, &(&1.id == step_id))
+
+    if step do
+      days = parse_duration_days(Map.get(params, "duration"))
+
+      case Factories.update_step(step, %{duration_days: days}) do
+        {:ok, _} -> {:noreply, reload_factory(socket) |> assign(step_inline_id: nil)}
+        {:error, _} -> {:noreply, socket}
       end
     else
       {:noreply, socket}
@@ -779,6 +831,7 @@ def handle_event("cancel_commitment_edit", _params, socket) do
             add_step_node_id={@add_step_node_id}
             add_step_name={@add_step_name}
             card_menu_id={@card_menu_id}
+            step_inline_id={@step_inline_id}
             scroll_to_node_id={@scroll_to_node_id}
             sdbr_expanded={@sdbr_expanded}
                         sdbr_help_open={@sdbr_help_open}
@@ -1714,6 +1767,7 @@ defp versions_panel(assigns) do
             add_step_node_id={@add_step_node_id}
             add_step_name={@add_step_name}
             card_menu_id={@card_menu_id}
+            step_inline_id={@step_inline_id}
             scroll_to_node_id={@scroll_to_node_id}
           />
         <% end %>
@@ -1734,6 +1788,7 @@ defp versions_panel(assigns) do
                 add_step_node_id={@add_step_node_id}
                 add_step_name={@add_step_name}
                 card_menu_id={@card_menu_id}
+                step_inline_id={@step_inline_id}
               />
             <% end %>
           </div>
@@ -1803,6 +1858,7 @@ defp versions_panel(assigns) do
                 add_step_node_id={@add_step_node_id}
                 add_step_name={@add_step_name}
                 card_menu_id={@card_menu_id}
+                step_inline_id={@step_inline_id}
                 scroll_to_node_id={@scroll_to_node_id}
               />
           <% end %>
@@ -2006,6 +2062,7 @@ defp versions_panel(assigns) do
       sequence={@sequence}
       add_step_node_id={@add_step_node_id}
       card_menu_id={@card_menu_id}
+      step_inline_id={@step_inline_id}
       scroll_to_node_id={@scroll_to_node_id}
     />
     """
@@ -2019,6 +2076,7 @@ defp versions_panel(assigns) do
       sequence={@sequence}
       add_step_node_id={@add_step_node_id}
       card_menu_id={@card_menu_id}
+      step_inline_id={@step_inline_id}
       scroll_to_node_id={@scroll_to_node_id}
     />
     """
@@ -2134,33 +2192,67 @@ defp node_card(assigns) do
           </div>
           <div class="py-0.5">
             <div class="border-t border-dashed border-zinc-200 dark:border-zinc-600"></div>
-            <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 px-2.5 pb-1.5 text-[11px] text-zinc-700 dark:text-zinc-200">
-              <span class="text-zinc-500 dark:text-zinc-400">Part</span>
-              <span class="text-right"><%= (@node.part && @node.part.name) || "—" %></span>
-              <span class="text-zinc-500 dark:text-zinc-400">Order qty</span>
-              <span class="tabular-nums text-right"><%= if @node.first_batch_qty, do: @node.first_batch_qty, else: "—" %></span>
-              <span class="text-zinc-500 dark:text-zinc-400">Batch</span>
-              <span class="tabular-nums text-right"><%= if @node.supply_batch, do: @node.supply_batch, else: "—" %></span>
+            <div class="flex items-start justify-between gap-2 px-2.5 pb-1.5 pt-1">
+              <div class="min-w-0">
+                <div class="truncate text-[12px] font-semibold text-zinc-900 dark:text-zinc-100">
+                  <%= (@node.part && @node.part.name) || "—" %>
+                </div>
+                <%= if @node.part && @node.part.part_number do %>
+                  <div class="text-[10px] text-zinc-500 dark:text-zinc-400">
+                    SKU: <%= @node.part.part_number %>
+                  </div>
+                <% end %>
+              </div>
+              <div class="shrink-0 text-right tabular-nums text-[12px] font-semibold text-zinc-900 dark:text-zinc-100">
+                <%= if @node.first_batch_qty, do: @node.first_batch_qty, else: "—" %> / <%= if @node.supply_batch, do: @node.supply_batch, else: "—" %>
+              </div>
             </div>
 
             <div class="border-t border-dashed border-zinc-200 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:border-zinc-600 dark:text-zinc-500">
               Steps
             </div>
             <%= for step <- @node.steps || [] do %>
-              <button
-                type="button"
-                phx-click="open_step_edit"
-                phx-value-id={step.id}
-                class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-2.5 py-1 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/30"
-              >
+              <div class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-2.5 py-1 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/30">
                 <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-bold tabular-nums text-zinc-400 dark:border-zinc-500 dark:text-zinc-300">
                   <%= step.position %>
                 </span>
-                <span class="truncate font-medium text-zinc-700 dark:text-zinc-200"><%= step.name %></span>
-                <span class="tabular-nums text-[10px] text-zinc-400">
-                  <%= if step.duration_days, do: format_duration_days(step.duration_days), else: "—" %>
-                </span>
-              </button>
+                <button
+                  type="button"
+                  phx-click="open_step_edit"
+                  phx-value-id={step.id}
+                  class="truncate text-left font-medium text-zinc-700 hover:text-indigo-600 dark:text-zinc-200 dark:hover:text-indigo-300"
+                >
+                  <%= step.name %>
+                </button>
+                <%= if @step_inline_id == step.id do %>
+                  <form phx-submit="save_step_inline_duration" class="contents">
+                    <input type="hidden" name="step_id" value={step.id} />
+                    <input
+                      type="text"
+                      name="duration"
+                      value={if step.duration_days, do: format_duration_days(step.duration_days), else: ""}
+                      placeholder="1w"
+                      phx-hook="AutoSelect"
+                      id={"step-inline-duration-#{step.id}"}
+                      phx-blur="save_step_inline_duration"
+                      phx-value-step-id={step.id}
+                      phx-keydown="cancel_step_inline_duration"
+                      phx-key="Escape"
+                      class="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-right text-[10px] tabular-nums outline-none focus:ring-1 focus:ring-indigo-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                    />
+                  </form>
+                <% else %>
+                  <button
+                    type="button"
+                    phx-click="start_step_inline_duration"
+                    phx-value-id={step.id}
+                    class="tabular-nums text-[10px] text-zinc-400 hover:text-indigo-500 dark:text-zinc-500 dark:hover:text-indigo-400"
+                    title="Edit duration"
+                  >
+                    <%= if step.duration_days, do: format_duration_days(step.duration_days), else: "—" %>
+                  </button>
+                <% end %>
+              </div>
             <% end %>
             <%= if @add_step_node_id == @node.id do %>
               <form phx-submit="add_step" class="flex items-center gap-2 border-t border-dashed border-zinc-200 px-2.5 py-1.5 dark:border-zinc-600">
@@ -2176,7 +2268,7 @@ defp node_card(assigns) do
                 <button type="button" phx-click="cancel_add_step" class="text-[10px] text-zinc-400">Cancel</button>
               </form>
             <% end %>
-            <%= if @add_step_node_id != @node.id do %>
+                        <%= if @add_step_node_id != @node.id do %>
               <button
                 type="button"
                 phx-click="open_add_step"
@@ -2184,6 +2276,16 @@ defp node_card(assigns) do
                 class="w-full border-t border-dashed border-zinc-200 px-2.5 py-1 text-left text-[10px] text-zinc-400 transition-colors hover:bg-zinc-50 hover:text-indigo-500 dark:border-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-700/30 dark:hover:text-indigo-400"
               >
                 + step
+              </button>
+            <% end %>
+            <%= if Enum.empty?(@node.steps || []) do %>
+              <button
+                type="button"
+                phx-click="insert_default_supplier_steps"
+                phx-value-id={@node.id}
+                class="w-full border-t border-dashed border-zinc-200 px-2.5 py-1 text-left text-[10px] text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-emerald-600 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-700/30 dark:hover:text-emerald-400"
+              >
+                Insert defaults (Order · MFG · QC · Pack &amp; Load)
               </button>
             <% end %>
 
@@ -2362,20 +2464,47 @@ defp node_card(assigns) do
             Steps
           </div>
           <%= for step <- @node.steps || [] do %>
-            <button
-              type="button"
-              phx-click="open_step_edit"
-              phx-value-id={step.id}
-              class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-2.5 py-1 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/30"
-            >
+            <div class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-1.5 px-2.5 py-1 text-left text-xs hover:bg-zinc-50 dark:hover:bg-zinc-700/30">
               <span class="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-300 text-[10px] font-bold tabular-nums text-zinc-400 dark:border-zinc-500 dark:text-zinc-300">
                 <%= step.position %>
               </span>
-              <span class="truncate font-medium text-zinc-700 dark:text-zinc-200"><%= step.name %></span>
-              <span class="tabular-nums text-[10px] text-zinc-400">
-                <%= if step.duration_days, do: format_duration_days(step.duration_days), else: "—" %>
-              </span>
-            </button>
+              <button
+                type="button"
+                phx-click="open_step_edit"
+                phx-value-id={step.id}
+                class="truncate text-left font-medium text-zinc-700 hover:text-indigo-600 dark:text-zinc-200 dark:hover:text-indigo-300"
+              >
+                <%= step.name %>
+              </button>
+              <%= if @step_inline_id == step.id do %>
+                <form phx-submit="save_step_inline_duration" class="contents">
+                  <input type="hidden" name="step_id" value={step.id} />
+                  <input
+                    type="text"
+                    name="duration"
+                    value={if step.duration_days, do: format_duration_days(step.duration_days), else: ""}
+                    placeholder="1w"
+                    phx-hook="AutoSelect"
+                    id={"step-inline-duration-#{step.id}"}
+                    phx-blur="save_step_inline_duration"
+                    phx-value-step-id={step.id}
+                    phx-keydown="cancel_step_inline_duration"
+                    phx-key="Escape"
+                    class="w-14 rounded border border-zinc-300 bg-white px-1 py-0.5 text-right text-[10px] tabular-nums outline-none focus:ring-1 focus:ring-indigo-400 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  />
+                </form>
+              <% else %>
+                <button
+                  type="button"
+                  phx-click="start_step_inline_duration"
+                  phx-value-id={step.id}
+                  class="tabular-nums text-[10px] text-zinc-400 hover:text-indigo-500 dark:text-zinc-500 dark:hover:text-indigo-400"
+                  title="Edit duration"
+                >
+                  <%= if step.duration_days, do: format_duration_days(step.duration_days), else: "—" %>
+                </button>
+              <% end %>
+            </div>
           <% end %>
           <%= if @add_step_node_id == @node.id do %>
             <form phx-submit="add_step" class="flex items-center gap-2 border-t border-dashed border-zinc-200 px-2.5 py-1.5 dark:border-zinc-600">
@@ -3631,6 +3760,8 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
           assign(assigns,
             node: node,
             step: step,
+            supply_step?: node.kind in [:supplier, :transport],
+            step_date: node.order_date,
             sibling_steps: siblings,
             equip_items: equip,
             material_items: mats,
@@ -3644,6 +3775,8 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
           assign(assigns,
             node: nil,
             step: nil,
+            supply_step?: false,
+            step_date: nil,
             sibling_steps: [],
             equip_items: [],
             material_items: [],
@@ -3675,8 +3808,9 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
               />
             </label>
 
+            <%= if !@supply_step? do %>
             <div
-              id={"step-cycle-#{@step.id}"}
+              id={{"step-cycle-#{@step.id}"}}
               phx-hook="StepCycleCalc"
               class="flex flex-wrap items-end gap-x-2 gap-y-2"
             >
@@ -3782,9 +3916,37 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
                   </option>
                 <% end %>
               </select>
-            </div>
-          </form>
+                          </div>
+                          <% end %>
 
+                          <%= if @supply_step? do %>
+                            <div class="flex gap-2">
+                              <label class="block flex-1">
+                                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Duration</span>
+                                <input
+                                  type="text"
+                                  name="duration"
+                                  value={if @step.duration_days, do: format_duration_days(@step.duration_days), else: ""}
+                                  placeholder="1w"
+                                  form={{"save-step-#{@step.id}"}}
+                                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                />
+                              </label>
+                              <label class="block flex-1">
+                                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Date</span>
+                                <input
+                                  type="date"
+                                  name="step_date"
+                                  value={@step_date}
+                                  form={{"save-step-#{@step.id}"}}
+                                  class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                />
+                              </label>
+                            </div>
+                          <% end %>
+                        </form>
+
+          <%= if !@supply_step? do %>
           <div class="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-700">
             <h4 class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Machines</h4>
             <p class="mb-1.5 text-[10px] text-zinc-400">Assets at the station (saw, table, power…)</p>
@@ -3806,6 +3968,7 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
               total_cents={@burn_total_cents}
             />
           </div>
+          <% end %>
 
           <div class="mt-4 flex items-center justify-end gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
             <button
@@ -4347,12 +4510,9 @@ defp format_dwm(v), do: StationMath.format_dwm(v)
                     <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Batch</span>
                     <input type="number" name="supply_batch" min="1" value={@node.supply_batch} placeholder="e.g. 150" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm tabular-nums dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
                   </label>
-                </div>
-
-                <div class="flex gap-2">
                   <label class="block flex-1">
                     <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Every</span>
-                    <input type="text" name="supply_frequency" value={format_duration_days(@node.supply_frequency_days)} placeholder="e.g. 2d, 1w, 60d" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
+                    <input type="text" name="supply_frequency" value={format_duration_days(@node.supply_frequency_days)} placeholder="e.g. 2d, 1w" class="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100" />
                   </label>
                 </div>
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
