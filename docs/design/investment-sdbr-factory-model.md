@@ -147,3 +147,178 @@ The factory cards (Supplier → Receiving → Storage → Movement → Molding S
 
 - Interactive HTML model: `investment-sdbr-factory-model.html`
 - Original source: `/Users/carroll67/Downloads/interactive_visual_im_7daba57d3c35c83e.html`
+
+## Rules of Flow / CCPM Foundation (locked 2026-10-11)
+
+The factory is a **blended system** — not a pure project (Gantt) and not a pure
+repetitive plant (takt line). It is a complex supply chain managed as one
+system, subordinated to a declared CCR, with the crew as the constant and the
+stakeholders as the constraint.
+
+### The two lenses
+
+- **CCPM (Critical Chain, Goldratt 1997)** — the *scheduling* layer. Identify
+  the critical chain (longest path through dependent tasks *with resource
+  contention*), strip task-level safety, aggregate it into a project buffer,
+  add feeding buffers, and use buffer management to protect the due date.
+  The drum is the constrained resource. Answers: *how do we protect the due
+  date.*
+- **Rules of Flow (Efrat Goldratt-Ashlag 2022)** — the *flow-management*
+  layer. The book Efrat says her father wished to write. Focus shifts off
+  buffers and onto the obstacles that clog the flow of work, in multi-project
+  / portfolio environments. Answers: *how do we keep many projects flowing
+  through one crew without clogging.*
+
+### The 8 Rules of Flow
+
+1. Avoid bad multitasking, control your WIP (WIP = projects handled
+   simultaneously; more in the mix = longer lead time).
+2. Verify full-kit before you get going (info, approvals, materials in hand
+   before starting, or you stall).
+3. Triage to work on the right priorities (cut the nice-to-haves).
+4. Ensure synchronization between tasks / people / resources (anchor to the
+   largest task, align everything to it).
+5. Increase the dosage when problems repeat (concentrate, don't spread thin).
+6. Avoid unnecessary rework by finding its cause (root cause, not symptom).
+7. Standardize when improvising is costly (checklists, standard processes).
+8. Abolish local optimum; global optimum matters (energy in the bottleneck).
+
+### The blended model
+
+```
+  [ CCPM upstream: crews, work_cells, drum, feeding buffers ]
+        |  (Rules of Flow governs: WIP, full-kit, triage, sync)
+        v
+  [ Shipping Buffer ]  <-- the seam: CCPM buffer mgmt + RoF WIP control
+        |
+        v
+  [ Flow downstream: steady delivery to the market ]
+```
+
+- **CCPM upstream** — crew-driven, project-oriented, flexible. This is what
+  lets the system pick up new clients fast (reconfigure a crew to a new
+  product/site without retooling a flow line).
+- **Shipping buffer** — the seam where project work becomes flow. Absorbs the
+  variability of crew-driven work and presents a steady stream to the market.
+- **Flow downstream** — steady delivery.
+
+### Key convergence: full-kit = step "requires"
+
+Rule 2 (full-kit) is exactly the step-level "requires" mechanism: a step
+cannot run until its required inputs are physically in hand — the die, the
+design document, the thermal break from another supplier, the 3rd-party
+testing firm. The model already designed this; Rules of Flow names it.
+
+### The crew is the constant
+
+The crew is a resource that spans cards, is the drum in crew-driven mode, and
+is preserved through the transition to flow. Labor stability is a first-class
+constraint (stakeholder principle), not a cost to minimize. When demand
+shifts, the flow restructures around the same people; the crew is never the
+thing that gets cut.
+
+### The CCR migrates, it is not elevated
+
+The constraint is always present; it changes identity as the system invests.
+Phase 1: the crew is the drum. Phase 2 (market proven): a station becomes the
+CCR. The tool must let the user re-flag the CCR as the line expands, and the
+supplier Gap calc must read against the CCR's rate (min of line commitment
+and constraint rate), not each line's own ambition.
+
+## Blended Crew + Slot Model (dialogue capture 2026-10-11, pending fresh-eyes review)
+
+Locking-in session outcome. Open questions at the end — to answer after reviewing
+in a new session. Verify with `git log` / this design doc; do not re-derive from
+memory.
+
+### Receive / Consume / Deliver with slots
+
+- Every card is a **holding capacity**: it receives, holds item(s) in **slots**,
+  steps **consume** from the received slot list, then it **delivers** to fill
+  the downstream card's open slots.
+- A step can only consume from the card's **received** slots. If the card
+  hasn't received it, the step is blocked (full-kit gate).
+- Delivery = the upstream side of another card's receive. There is no separate
+  delivery table; the graph's links ARE the delivery. A card's delivery is
+  expressed as its seq# appearing in the downstream card's slot-table
+  "assignment" column.
+
+### Spec + Assignment (dissolves the quick-model vs accurate-model conflict)
+
+Two states on every card, mirrors calijane2's spec/fulfillment but embedded in
+the card:
+
+- **Spec state** (fast): card + steps placeable, consumables recorded as
+  labels/free-text. No gate enforced.
+- **Assigned state** (accurate): consumables pinned to a real source — a part
+  (supplier card), a producing line (work_cell), or a tool/doc/service. The
+  full-kit gate engages only for assigned items.
+
+Key rule: **only assigned consumption blocks.** Unassigned runs freely, so the
+design never locks mid-exploration; accuracy kicks in where it exists.
+
+### Card popup receive manifest (proposed UI)
+
+A table on the card popup. Rows = number of slots. Columns:
+
+  Spec (planned item)  |  Assignment (delivering card seq#)  |  Qty
+
+- Spec-only row = design hypothesis, fast, no gate.
+- Spec + Assignment row = resolved, gate on.
+- Row count shows slot capacity (a 5-slot card = 5 rows / or grouped, see Q1).
+
+### Full-kit resolves through the graph
+
+A step's consumption can reference a **line**, not just a part: "walls come from
+our lamination line." The gate is a graph traversal — resolve each input to an
+external supplier or an internal producing line, and confirm the line exists
+and flows. Two-level gate: line-level (the producing line must exist) and
+step-level (the consumables must be in the card's slots).
+
+### Graph → CAD link
+
+A card's capacity (slots) + position in the flow makes the graph a logical
+layout, mappable to a CAD floorplan or a 2D/3D supply-chain map. Same cards /
+slots / flow; graph = logic, CAD = geometry.
+
+### Crew = slot-buffer drum (Option A, agreed)
+
+The crew is a resource spanning cards, the drum in crew-driven mode. Each work
+cell declares crew-hours of work; the crew's capacity is the constraint. Work
+is released only when the kitted step queue is satisfied (the rope). A not-
+kitted step blocks release, so the crew is never handed work it can't do —
+full-kit becomes a guarantee by construction.
+
+### OPEN QUESTIONS for fresh-eyes review
+
+- **Q1:** Per-slot spec vs grouped rows — for "5 slots × iMod frames", show 5
+  identical rows (qty 1 each) or 1 grouped row ("iMod frames — from card 3 —
+  qty 5", capacity implied by the row count)? Lean: grouped, to reduce noise
+  while the design moves.
+- **Q2:** Where the consuming step references received slots — confirm it is
+  the **step** row that names which received slots/items it consumes (step
+  table joins slot table), not a column on the slot table.
+- **Q3:** Constraint declaration — **explicit** (a flag declaring "this card is
+  the CCR") vs **automatic** (tool finds the slowest card). Lean: explicit
+  first; automatic needs a full line-rate solver.
+- **Q4:** Crew-hours — a property of the **cell** (work content, fixed) with the
+  crew's capacity/skill as the variable, vs per-crew skill that changes cell
+  time. Lean: property of the cell.
+- **Q5:** Step consumption assignment — **manual** (user specifies "consumes
+  from lamination line") vs **semi-auto** (tool suggests candidates). Lean:
+  manual; semi-auto is a later nicety.
+- **Q6:** PID line / transport buffer window — is the pickup window **relative to
+  the supplier's dock ETA** (d1–d2 days after dock hit) or **absolute dates**?
+  Lean: relative-to-dock (auto-tracks real ETA).
+- **Q7:** Supplier date anchor — confirm the kickoff date on step 1 is the
+  **order date**, and every later step shows its cumulative ETA (order_date +
+  running Σ durations), with a "+ STEP" total-bar in the footer. Workstream A
+  is a display pass, not new math.
+
+### Status
+
+Design dialogue, not built. Commits this session: `f08bc25` (inline step
+editing per calijane2), `65b8815` (step inline per plan: name+duration inline,
+ellipsis for popup). This section supersedes nothing already built; it is the
+forward design for slot/receive/consume/deliver + crew-as-drum + rules-of-flow
+layers.
