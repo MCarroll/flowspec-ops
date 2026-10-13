@@ -90,7 +90,7 @@ defmodule FlowspecOps.TOC.DSL do
     maxd = if map_size(depth) == 0, do: 0, else: Enum.max(Map.values(depth))
 
     # y: depth 0 at bottom (maxd*cell), depth maxd at top (0)
-    cell_y = 110
+        cell_y = 70
     y = Map.new(depth, fn {id, d} -> {id, (maxd - d) * cell_y + 20} end)
 
     # x: group by depth, spread horizontally
