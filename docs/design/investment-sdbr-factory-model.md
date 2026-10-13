@@ -295,25 +295,44 @@ full-kit becomes a guarantee by construction.
   identical rows (qty 1 each) or 1 grouped row ("iMod frames — from card 3 —
   qty 5", capacity implied by the row count)? Lean: grouped, to reduce noise
   while the design moves.
-- **Q2:** Where the consuming step references received slots — confirm it is
+   A1: This is table in the popup form for the cards - see table bellow
+
+   | # | Slots | Dim   | Spec            | Assign     | Link(line_seq #) | Qty |
+   | 1 | 3     | 50x12 | iMod Frame Base | IM_B01_001 | 1_01             | 1   |
+   | 2 | 2     | 10x4  | USG Panels      | USG_34_ctm | 2_01             | 20  |
+  
+ **Q2:** Where the consuming step references received slots — confirm it is
   the **step** row that names which received slots/items it consumes (step
   table joins slot table), not a column on the slot table.
+  - A2: Example workflow - Flooring work_cell, step 1: Place Flooring, consumes
+    (#1 iMod Frame Base), (#2 USG Panels) dropdown of what is in the materials table. This will work even if Assign, and Link is empty. 
+
 - **Q3:** Constraint declaration — **explicit** (a flag declaring "this card is
   the CCR") vs **automatic** (tool finds the slowest card). Lean: explicit
   first; automatic needs a full line-rate solver.
+  - A3: What if I dont know yet? So im making a hypothesis on where I expect the
+  ccr to be? What if the ccr is the market, do we still mark a ccr in the factory? This is what I am not sure about. Can we do a search to see what other TOC experts have said on complex supply chains?
+
 - **Q4:** Crew-hours — a property of the **cell** (work content, fixed) with the
   crew's capacity/skill as the variable, vs per-crew skill that changes cell
   time. Lean: property of the cell.
+    A4: If I have three cards in a row. And I have staff that works in sequence. Card 1, move to card 2, move to card 3. Card 4 the crew splits in half and on another line have the crew goes to another card. I am just not quite sure how that is shown visually and how it works into the throughput calculations. So maybe we look at this as a kanban situation. If you dont have a card you dont build, likewise the staff moves with a kanban equivilancy.  
+    
 - **Q5:** Step consumption assignment — **manual** (user specifies "consumes
   from lamination line") vs **semi-auto** (tool suggests candidates). Lean:
   manual; semi-auto is a later nicety.
+     A5: See A1.
+
 - **Q6:** PID line / transport buffer window — is the pickup window **relative to
   the supplier's dock ETA** (d1–d2 days after dock hit) or **absolute dates**?
   Lean: relative-to-dock (auto-tracks real ETA).
+     A6: So what I am saying with the transport card is that it has a buffer in its modality. What do you recommend here. Remember we have two modes. Design. And then later, if the project is a go, we use the tool as a management system. that is really where the buffer comes into play. In the simulation there is probabilities that could be used. Like a monte carlo simulation. Again need help here.    
+
 - **Q7:** Supplier date anchor — confirm the kickoff date on step 1 is the
   **order date**, and every later step shows its cumulative ETA (order_date +
   running Σ durations), with a "+ STEP" total-bar in the footer. Workstream A
   is a display pass, not new math.
+     A7: confirming this is true.  
 
 ### Status
 
