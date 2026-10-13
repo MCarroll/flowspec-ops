@@ -28,13 +28,15 @@ import StepCycleCalc from "./hooks/step_cycle_calc"
 import TabSubmitLast from "./hooks/tab_submit_last"
 import NetScroll from "./hooks/net_scroll"
 import AutoSelect from "./hooks/auto_select"
+import TocGraph from "./hooks/toc_graph"
 
 let Hooks = {
   SidebarState: SidebarState,
   StepCycleCalc: StepCycleCalc,
   TabSubmitLast: TabSubmitLast,
   NetScroll: NetScroll,
-  AutoSelect: AutoSelect
+  AutoSelect: AutoSelect,
+  TocGraph: TocGraph
 }
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")

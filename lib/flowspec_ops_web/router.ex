@@ -18,12 +18,14 @@ defmodule FlowspecOpsWeb.Router do
     pipe_through :browser
     live "/", ClientsLive, :index
     live "/clients", ClientsLive, :index
-live "/factory/projects", Factory.ProjectsLive, :index
+    live "/factory/projects", Factory.ProjectsLive, :index
     live "/factory/projects/:id", Factory.ShowLive, :show
-get "/factory/projects/:factory_id/nodes/:node_id/pencil", PencilController, :show
+    get "/factory/projects/:factory_id/nodes/:node_id/pencil", PencilController, :show
     get "/factory/projects/:factory_id/storage-groups/:group/pencil", PencilController, :storage_group
     live "/factory/templates", Factory.TemplatesLive, :index
     live "/factory/part-specs", Factory.PartSpecsLive, :index
+    live "/toc", TOC.TocLive, :index
+    live "/toc/:id", TOC.TocShowLive, :show
   end
 
   # Other scopes may use custom stacks.

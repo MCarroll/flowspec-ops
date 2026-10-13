@@ -73,11 +73,11 @@ defmodule FlowspecOps.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
-      "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["tailwind flowspec_ops", "esbuild flowspec_ops"],
+      "assets.setup": ["tailwind.install --if-missing", "cmd npm install --prefix assets"],
+      "assets.build": ["tailwind flowspec_ops", "cmd node assets/build.mjs"],
       "assets.deploy": [
         "tailwind flowspec_ops --minify",
-        "esbuild flowspec_ops --minify",
+        "cmd node assets/build.mjs",
         "phx.digest"
       ]
     ]
