@@ -1,31 +1,36 @@
 // assets/js/hooks/toc_graph.js
-// LiveView hook that mounts the Svelte Flow TOC canvas and wires the round-trip:
-//   - user drags/edits -> pushEvent("graph_changed", {graph}) -> LiveView persists
-//   - agent/LiveView updates -> handleEvent("graph_update") -> re-render canvas
+// LiveView hook that mounts the Svelte Flow TOC canvas and wires the round-trip.
+// Uses Svelte 5: mount() + a shared store (NOT `new Component()` / $on / $set,
+// which are gone in Svelte 5).
+import { mount } from "svelte";
 import TocGraphApp from "../toc/TocGraph.svelte";
+import { graphStore } from "../toc/graph_store.js";
 
 let TocGraph = {
   mounted() {
     const el = this.el;
     const initial = JSON.parse(el.dataset.graph || "{}");
+    graphStore.set(initial);
 
-    this.app = new TocGraphApp({
+    this.app = mount(TocGraphApp, {
       target: el,
-      props: { graph: initial },
-    });
-
-    // canvas -> server
-    this.app.$on("graph_changed", (e) => {
-      this.pushEvent("graph_changed", { graph: e.detail });
-    });
-
-    // server -> canvas (agent edits, PubSub broadcast)
-    this.handleEvent("graph_update", (payload) => {
-      this.app.$set({ graph: payload.graph });
+      props: {
+        onChange: (graph) => {
+          graphStore.set(graph);
+          this.pushEvent("graph_changed", { graph });
+        },
+      },
     });
   },
+  updated() {
+    // Server re-rendered the div; re-read data-graph (agent edits / broadcast).
+    const el = this.el;
+    if (el.dataset.graph) {
+      graphStore.set(JSON.parse(el.dataset.graph));
+    }
+  },
   destroyed() {
-    if (this.app) this.app.$destroy();
+    if (this.app) this.app.$destroy?.();
   },
 };
 

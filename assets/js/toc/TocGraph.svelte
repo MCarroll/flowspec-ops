@@ -1,16 +1,17 @@
 <script>
   // assets/js/toc/TocGraph.svelte
-  // Svelte Flow canvas for TOC trees. Renders entity nodes with a corner badge
-  // (A/B/C/D/D'/IE/IO/UDE/INJ) that never overlaps the label text.
+  // Svelte Flow canvas for TOC trees — RUNES MODE (Svelte 5).
+  // SvelteFlow's nodes/edges are $bindable, so we hold them as $state and use
+  // bind:nodes / bind:edges. We sync them from the store reactively.
   import { SvelteFlow, Background } from "@xyflow/svelte";
   import "@xyflow/svelte/dist/style.css";
   import TocNode from "./TocNode.svelte";
-  import { createEventDispatcher } from "svelte";
+  import { graphStore } from "./graph_store.js";
 
-  const dispatch = createEventDispatcher();
   const nodeTypes = { tocNode: TocNode };
 
-  export let graph = { nodes: [], edges: [] };
+  // Callback prop (runes): the hook passes a function to push changes to server.
+  let { onChange = () => {} } = $props();
 
   // Map a node's class to its badge prefix + colors.
   const BADGE = {
@@ -24,54 +25,58 @@
     Injection: { prefix: "INJ", fill: "#d0ebff", stroke: "#1971c2" },
   };
 
-  // Build Svelte Flow nodes from the stored graph. Each node carries its badge
-  // in `data`; the custom node component renders it in the top-left corner.
-  $: flowNodes = (graph.nodes || []).map((n) => {
-    const badge = BADGE[n.class] || { prefix: "", fill: "#f1f3f5", stroke: "#495057" };
-    return {
-      id: n.id,
-      position: { x: n.x || 0, y: n.y || 0 },
-      data: {
-        label: n.label || n.title || n.id,
-        badge: badge.prefix ? `${badge.prefix}${n.number || ""}` : "",
-        fill: badge.fill,
-        stroke: badge.stroke,
-      },
-      type: "tocNode",
-    };
+  // SvelteFlow owns these via bind: — $state, not $derived.
+  let flowNodes = $state([]);
+  let flowEdges = $state([]);
+
+  // Sync from the store whenever it changes.
+  $effect(() => {
+    const g = $graphStore;
+    flowNodes = (g.nodes || []).map((n) => {
+      const badge = BADGE[n.class] || { prefix: "", fill: "#f1f3f5", stroke: "#495057" };
+      return {
+        id: n.id,
+        position: { x: n.x || 0, y: n.y || 0 },
+        data: {
+          label: n.label || n.title || n.id,
+          badge: badge.prefix ? `${badge.prefix}${n.number || ""}` : "",
+          fill: badge.fill,
+          stroke: badge.stroke,
+        },
+        type: "tocNode",
+      };
+    });
+    flowEdges = (g.edges || []).map((e) => ({
+      id: e.id || `${e.source}-${e.target}`,
+      source: e.source,
+      target: e.target,
+      animated: false,
+    }));
   });
 
-  $: flowEdges = (graph.edges || []).map((e) => ({
-    id: e.id || `${e.source}-${e.target}`,
-    source: e.source,
-    target: e.target,
-    animated: false,
-  }));
-
-  // Push changes back to the LiveView hook.
+  // Push position changes back through onChange (-> hook -> server).
   function onNodesChange(changes) {
-    // position changes -> emit full graph
     const moved = changes.filter((c) => c.type === "position");
     if (moved.length) {
-      const updated = (graph.nodes || []).map((n) => {
+      const g = $graphStore;
+      const updated = (g.nodes || []).map((n) => {
         const m = moved.find((c) => c.id === n.id);
         return m ? { ...n, x: m.position.x, y: m.position.y } : n;
       });
-      dispatch("graph_changed", { nodes: updated, edges: graph.edges || [] });
+      onChange({ nodes: updated, edges: g.edges || [] });
     }
   }
 </script>
 
 <div class="toc-canvas" style="width: 100%; height: 100%">
   <SvelteFlow
-    {flowNodes}
-    {flowEdges}
-    {nodeTypes}
-    on:nodesChange={onNodesChange}
-    fitView
-    nodesDraggable
-    nodesConnectable={false}
-  >
+      bind:nodes={flowNodes}
+      bind:edges={flowEdges}
+      {nodeTypes}
+      on:nodesChange={onNodesChange}
+      nodesDraggable
+      nodesConnectable={false}
+    >
     <Background />
   </SvelteFlow>
 </div>

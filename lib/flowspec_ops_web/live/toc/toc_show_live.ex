@@ -64,7 +64,7 @@ defmodule FlowspecOpsWeb.TOC.TocShowLive do
         phx-hook="TocGraph"
         phx-update="ignore"
         data-graph={Jason.encode!(@graph_json)}
-        class="h-[70vh] w-full rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+        class="h-[120vh] w-full rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
       >
       </div>
     </div>
