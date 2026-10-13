@@ -312,6 +312,27 @@ full-kit becomes a guarantee by construction.
   first; automatic needs a full line-rate solver.
   - A3: What if I dont know yet? So im making a hypothesis on where I expect the
   ccr to be? What if the ccr is the market, do we still mark a ccr in the factory? This is what I am not sure about. Can we do a search to see what other TOC experts have said on complex supply chains?
+  - **A3 RESOLVED (researched, 2026-10-12):** Yes, model a CCR — but
+    **conditionally.** Constraints form a hierarchy checked in order, not a
+    pick-one. (From DBR literature + JOM "Evolution of a management philosophy"
+    + DBR primer):
+      1. **Physical** — a resource (station, crew, transport leg) whose
+         capacity < demand.
+      2. **Market** — demand < capacity. DBR rule: *"If the CCR works at a rate
+         less than the rate demanded by the customer, it is the bottleneck;
+         otherwise the external demand rate, the market, is the bottleneck."*
+      3. **Policy** — a rule (permitting, interconnection) capping output.
+    - If a physical resource is the constraint → flag that card as CCR; its
+      rate drives everything.
+    - If the market is the constraint → the market demand rate (takt / line
+      commitment) is the drum; **no internal card is flagged as CCR.** Marking
+      a non-binding resource as CCR would be wrong.
+    - **"I don't know yet" = hypothesis mode (not a solver).** The CCR is a
+      settable hypothesis; the tool computes the as-if consequence (buffer it
+      needs, rate it caps, where the rope releases). The user tests
+      hypotheses against observed behavior (where the buffer drains, where
+      work queues) and confirms empirically — the TOC way. Explicit flag,
+      user-set, changeable; NOT an automatic solver.
 
 - **Q4:** Crew-hours — a property of the **cell** (work content, fixed) with the
   crew's capacity/skill as the variable, vs per-crew skill that changes cell
@@ -336,8 +357,8 @@ full-kit becomes a guarantee by construction.
 
 ### Status
 
-Design dialogue, not built. Commits this session: `f08bc25` (inline step
-editing per calijane2), `65b8815` (step inline per plan: name+duration inline,
-ellipsis for popup). This section supersedes nothing already built; it is the
-forward design for slot/receive/consume/deliver + crew-as-drum + rules-of-flow
-layers.
+**Question status (2026-10-12):**
+- **Locked:** Q1 (slot table: `# | Slots | Dim | Spec | Assign | Link(line_seq#) | Qty`), Q2 (step consumption = dropdown of materials table; works with empty Assign/Link), Q3 (CCR conditional + hypothesis mode, researched), Q5 (assignment lives in the slot table), Q7 (supplier date anchor = order date, cumulative ETA, +STEP footer bar).
+- **Open design work:** Q4 (crew splitting / kanban visual + throughput calc), Q6 (transport buffer; design mode vs management mode; Monte Carlo / probabilities).
+
+Design dialogue, not built (beyond existing app). Commits: `f08bc25`, `65b8815` (inline step editing), `cebe928` (design capture), `0ea4320` (answers Q1-Q7), current (A3 research). This section supersedes nothing already built; it is the forward design for slot/receive/consume/deliver + crew-as-drum + rules-of-flow layers.
