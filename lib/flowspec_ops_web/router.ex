@@ -25,6 +25,7 @@ defmodule FlowspecOpsWeb.Router do
     live "/factory/templates", Factory.TemplatesLive, :index
     live "/factory/part-specs", Factory.PartSpecsLive, :index
     live "/toc", TOC.TocLive, :index
+    live "/toc/clouds", TOC.TocLive, :clouds
     live "/toc/:id", TOC.TocShowLive, :show
   end
 

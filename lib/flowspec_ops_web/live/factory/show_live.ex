@@ -1793,6 +1793,7 @@ defp versions_panel(assigns) do
                 add_step_name={@add_step_name}
                 card_menu_id={@card_menu_id}
                 step_inline={@step_inline}
+                scroll_to_node_id={@scroll_to_node_id}
               />
             <% end %>
           </div>

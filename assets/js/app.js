@@ -29,6 +29,7 @@ import TabSubmitLast from "./hooks/tab_submit_last"
 import NetScroll from "./hooks/net_scroll"
 import AutoSelect from "./hooks/auto_select"
 import TocZoom from "./hooks/toc_zoom"
+import FlashDismiss from "./hooks/flash_dismiss"
 
 let Hooks = {
   SidebarState: SidebarState,
@@ -36,7 +37,8 @@ let Hooks = {
   TabSubmitLast: TabSubmitLast,
   NetScroll: NetScroll,
   AutoSelect: AutoSelect,
-  TocZoom: TocZoom
+  TocZoom: TocZoom,
+  FlashDismiss: FlashDismiss
 }
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")

@@ -5,6 +5,7 @@
  * across LiveView navigations and page reloads.
  */
 const SIDEBAR_STATE_KEY = "desktop_sidebar_state"
+const NAV_OPEN_KEY = "desktop_nav_open"
 
 const SidebarState = {
   mounted() {
@@ -17,6 +18,7 @@ const SidebarState = {
     this.cacheElements()
     this.isHidden = localStorage.getItem(SIDEBAR_STATE_KEY) === "hidden"
     this.bindToggleButtons()
+    this.restoreNav()
     this.applyState()
   },
 
@@ -24,6 +26,7 @@ const SidebarState = {
     this.unbindToggleButtons()
     this.cacheElements()
     this.bindToggleButtons()
+    this.restoreNav()
     this.applyState()
   },
 
@@ -35,7 +38,32 @@ const SidebarState = {
     this.desktopSidebar = this.el.querySelector("#desktop-sidebar")
     this.dashboardContent = this.el.querySelector("#dashboard-content")
     this.toggleButtons = Array.from(this.el.querySelectorAll("[data-sidebar-toggle]"))
-    this.toggleIcons = Array.from(this.el.querySelectorAll("[data-sidebar-icon=\"toggle\"]"))
+    this.toggleIcons = Array.from(this.el.querySelectorAll('[data-sidebar-icon="toggle"]'))
+    this.navGroups = Array.from(this.el.querySelectorAll("nav details[id]"))
+  },
+
+  // Submenu open/closed state survives navigations and reloads: each <details>
+  // carries an id (nav-factory, nav-toc); ids of open ones live in localStorage.
+  restoreNav() {
+    let open = []
+    try {
+      open = JSON.parse(localStorage.getItem(NAV_OPEN_KEY) || "[]")
+    } catch {
+      open = []
+    }
+
+    this.navGroups.forEach((group) => {
+      if (!group._navListener) {
+        group._navListener = () => this.persistNav()
+        group.addEventListener("toggle", group._navListener)
+      }
+      group.open = open.includes(group.id)
+    })
+  },
+
+  persistNav() {
+    const open = this.navGroups.filter((g) => g.open).map((g) => g.id)
+    localStorage.setItem(NAV_OPEN_KEY, JSON.stringify(open))
   },
 
   bindToggleButtons() {

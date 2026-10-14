@@ -96,6 +96,29 @@ defmodule FlowspecOps.TOC.DSLTest do
     assert length(g.nodes) == 1
   end
 
+  test "labelless node parses (AndJunctior); numbering passes through it" do
+    g =
+      DSL.layout(
+        DSL.parse("""
+        node ude1: UndesirableEffect "UDE";
+        node and1: AndJunctior;
+        node ie1: IntermediateEffect "Harm";
+        node ie2: IntermediateEffect "Benefit elsewhere";
+        edge ie1 -> and1
+        edge ie2 -> and1
+        edge and1 -> ude1
+        """)
+      )
+
+    by_id = Map.new(g.nodes, &{&1.id, &1})
+
+    # the labelless junctor survives parsing with the id as its label
+    assert by_id["and1"].label == "and1"
+    # its two inbound IEs still belong to the UDE's branch
+    assert by_id["ie1"].number == "1.1"
+    assert by_id["ie2"].number == "1.2"
+  end
+
   # --- helpers: mirror the router's geometry so the test can check the rule ---
 
   defp cloud_rect(nodes, cloud) do
@@ -158,5 +181,142 @@ defmodule FlowspecOps.TOC.DSLTest do
     else
       _ -> false
     end
+  end
+
+  test "cloud lays out on its side: A left, B/C middle, D/D' right" do
+    graph =
+      DSL.layout(
+        DSL.parse("""
+        cloud cc1: a1 b1 c1 d1 d1p
+        node a1: CommonObjective "Reap the benefits";
+        node b1: Need "Open dialog facilitates adoption";
+        node c1: Need "Open dialog blocks adoption";
+        node d1: Want "Invite cooperative dialog";
+        node d1p: Want "Manipulate politicians";
+        edge a1 -> b1
+        edge a1 -> c1
+        edge b1 -> d1
+        edge c1 -> d1p
+        """)
+      )
+
+    xpos = Map.new(graph.nodes, &{&1.id, &1.x})
+    # columns strictly left to right: A < {B, C} < {D, D'}
+    assert xpos["a1"] < xpos["b1"]
+    assert xpos["a1"] < xpos["c1"]
+    assert xpos["b1"] < xpos["d1"]
+    assert xpos["b1"] < xpos["d1p"]
+    assert xpos["c1"] < xpos["d1"]
+    assert xpos["c1"] < xpos["d1p"]
+
+    # D above D' in the right column
+    ypos = Map.new(graph.nodes, &{&1.id, &1.y})
+    assert ypos["d1"] < ypos["d1p"]
+  end
+
+  test "assume statements parse into edge-attached assumptions" do
+    parsed =
+      DSL.parse("""
+      node a1: CommonObjective "A";
+      node b1: Need "B";
+      edge a1 -> b1
+      assume a1->b1: "People trust open dialog"
+      """)
+
+    assert [%{from: "a1", to: "b1", text: "People trust open dialog"}] = parsed.assumptions
+    assert DSL.layout(parsed).assumptions == parsed.assumptions
+  end
+
+  test "pin and inject statements parse and survive layout" do
+    parsed =
+      DSL.parse("""
+      node ude1: UndesirableEffect "X";
+      pin 4@2
+      inject 3
+      inject 7
+      """)
+
+    assert parsed.pins == [%{cloud_id: 4, version: 2}]
+    assert parsed.injections == [3, 7]
+
+    layout = DSL.layout(parsed)
+    assert layout.pins == parsed.pins
+    assert layout.injections == parsed.injections
+  end
+
+  test "cloud diamond: B and D share top row, C and D' share bottom row, A centered" do
+    graph =
+      DSL.layout(
+        DSL.parse("""
+        cloud cc1: a1 b1 c1 d1 d1p
+        node a1: CommonObjective "Reap the benefits";
+        node b1: Need "Open dialog facilitates adoption";
+        node c1: Need "Open dialog blocks adoption";
+        node d1: Want "Invite cooperative dialog";
+        node d1p: Want "Manipulate politicians";
+        edge a1 -> b1
+        edge a1 -> c1
+        edge b1 -> d1
+        edge c1 -> d1p
+        """)
+      )
+
+    pos = Map.new(graph.nodes, &{&1.id, %{x: &1.x, y: &1.y, h: DSL.box_height(&1.label)}})
+
+    # ROW ALIGNMENT: B top == D top; C top == D' top
+    assert pos["b1"].y == pos["d1"].y
+    assert pos["c1"].y == pos["d1p"].y
+
+    # A in its own column (left of both), centered on the diamond's extent
+    assert pos["a1"].x < pos["b1"].x
+    assert pos["a1"].x < pos["d1"].x
+    a_mid = pos["a1"].y + div(pos["a1"].h, 2)
+    diamond_top = pos["b1"].y
+    diamond_bottom = pos["c1"].y + pos["c1"].h
+    assert abs(a_mid - div(diamond_top + diamond_bottom, 2)) <= 2
+  end
+
+  test "tension statement parses and survives layout" do
+    parsed =
+      DSL.parse("""
+      node a1: CommonObjective "A";
+      tension "I need to build AI data centers, and public resentment grows"
+      """)
+
+    assert parsed.tension == "I need to build AI data centers, and public resentment grows"
+    assert DSL.layout(parsed).tension == parsed.tension
+  end
+
+  test "empty cloud shows all five canonical boxes; filled members take their slots" do
+    # only A and one Need exist — B-empty, C, D, D' must still render
+    graph =
+      DSL.layout(
+        DSL.parse("""
+        cloud cc1: a1 b1
+        node a1: CommonObjective "Shared goal";
+        node b1: Need "Build the thing";
+        """)
+      )
+
+    placeholders = Enum.filter(graph.nodes, &Map.get(&1, :placeholder))
+    assert length(placeholders) == 3
+    assert Enum.map(placeholders, & &1.letter) |> Enum.sort() == ["C", "D", "D'"]
+
+    # placeholders sit in their canonical columns (A col 0, B/C col 1, D/D' col 2)
+    xpos = Map.new(graph.nodes, &{&1.letter || &1.id, &1.x})
+    assert xpos["A"] < xpos["C"]
+    assert xpos["C"] < xpos["D"]
+  end
+
+  test "fully empty cloud still renders five placeholder boxes" do
+    graph =
+      DSL.layout(
+        DSL.parse("""
+        cloud cc1:
+        """)
+      )
+
+    placeholders = Enum.filter(graph.nodes, &Map.get(&1, :placeholder))
+    assert Enum.map(placeholders, & &1.letter) |> Enum.sort() == ["A", "B", "C", "D", "D'"]
   end
 end

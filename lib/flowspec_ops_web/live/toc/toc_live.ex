@@ -10,13 +10,35 @@ defmodule FlowspecOpsWeb.TOC.TocLive do
      assign(socket,
        page_title: "TOC Diagrams",
        diagrams: TOC.list_diagrams(),
+       clouds_only: false,
        error: nil
      )}
   end
 
   @impl true
+  def handle_params(_params, _uri, socket) do
+    clouds_only = socket.assigns.live_action == :clouds
+
+    diagrams =
+      if clouds_only do
+        TOC.list_clouds()
+      else
+        TOC.list_trees()
+      end
+
+    {:noreply,
+     assign(socket,
+       page_title: if(clouds_only, do: "Clouds", else: "Diagrams"),
+       diagrams: diagrams,
+       clouds_only: clouds_only
+     )}
+  end
+
+  @impl true
   def handle_event("create", %{"name" => name}, socket) do
-    case TOC.create_diagram(%{name: name}) do
+    kind = if socket.assigns.clouds_only, do: "cloud", else: "tree"
+
+    case TOC.create_diagram(%{name: name, kind: kind}) do
       {:ok, diagram} ->
         {:noreply, push_navigate(socket, to: ~p"/toc/#{diagram.id}")}
 
@@ -30,7 +52,12 @@ defmodule FlowspecOpsWeb.TOC.TocLive do
     ~H"""
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <h1 class="text-xl font-semibold text-zinc-900 dark:text-zinc-100">TOC Diagrams</h1>
+        <h1 class="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
+          {@page_title}
+          <%= if @clouds_only do %>
+            <span class="ml-2 text-sm font-normal text-zinc-400">diagrams with a cloud</span>
+          <% end %>
+        </h1>
         <form phx-submit="create" class="flex gap-2">
           <input
             type="text"
@@ -60,7 +87,11 @@ defmodule FlowspecOpsWeb.TOC.TocLive do
             >
               <span>{d.name}</span>
               <span class="text-xs text-zinc-400">
-                {length(DSL.parse(d.dsl || "").nodes)} nodes
+                <%= if @clouds_only do %>
+                  {length(TOC.list_versions(d.id))} versions
+                <% else %>
+                  {length(DSL.parse(d.dsl || "").nodes)} nodes
+                <% end %>
               </span>
             </.link>
           </li>
