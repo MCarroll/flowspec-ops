@@ -9,13 +9,5 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "@sveltejs/vite-plugin-svelte": "^7.3.1",
-    "@xyflow/svelte": "^1.7.0",
-    "esbuild-svelte": "^0.9.5",
-    "svelte": "^5.57.2",
-    "svelte-preprocess": "^6.0.5",
-    "typescript": "^6.0.3"
-  }
+  "type": "commonjs"
 }

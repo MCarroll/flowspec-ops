@@ -5,7 +5,6 @@
 import { fileURLToPath } from "url";
 import path from "path";
 import esbuild from "esbuild";
-import sveltePlugin from "esbuild-svelte";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -20,11 +19,6 @@ const options = {
   nodePaths: [path.join(here, "../deps")],
   target: "es2017",
   external: ["/fonts/*", "/images/*"],
-  plugins: [
-      sveltePlugin({
-        compilerOptions: { dev: !process.env.NODE_ENV },
-      }),
-    ],
   logLevel: "info",
 };
 

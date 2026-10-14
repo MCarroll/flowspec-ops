@@ -2,6 +2,7 @@ defmodule FlowspecOpsWeb.TOC.TocLive do
   use FlowspecOpsWeb, :live_view
 
   alias FlowspecOps.TOC
+  alias FlowspecOps.TOC.DSL
 
   @impl true
   def mount(_params, _session, socket) do
@@ -15,7 +16,7 @@ defmodule FlowspecOpsWeb.TOC.TocLive do
 
   @impl true
   def handle_event("create", %{"name" => name}, socket) do
-    case TOC.create_diagram(%{name: name, graph_json: %{nodes: [], edges: []}}) do
+    case TOC.create_diagram(%{name: name}) do
       {:ok, diagram} ->
         {:noreply, push_navigate(socket, to: ~p"/toc/#{diagram.id}")}
 
@@ -47,7 +48,7 @@ defmodule FlowspecOpsWeb.TOC.TocLive do
       </div>
 
       <%= if @error do %>
-        <p class="text-sm text-red-600"><%= @error %></p>
+        <p class="text-sm text-red-600">{@error}</p>
       <% end %>
 
       <ul class="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -57,9 +58,9 @@ defmodule FlowspecOpsWeb.TOC.TocLive do
               navigate={~p"/toc/#{d.id}"}
               class="flex items-center justify-between py-3 text-sm font-medium text-zinc-800 hover:text-zinc-600 dark:text-zinc-100 dark:hover:text-zinc-300"
             >
-              <span><%= d.name %></span>
+              <span>{d.name}</span>
               <span class="text-xs text-zinc-400">
-                <%= length(Map.get(d.graph_json, "nodes", [])) %> nodes
+                {length(DSL.parse(d.dsl || "").nodes)} nodes
               </span>
             </.link>
           </li>

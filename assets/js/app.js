@@ -28,7 +28,6 @@ import StepCycleCalc from "./hooks/step_cycle_calc"
 import TabSubmitLast from "./hooks/tab_submit_last"
 import NetScroll from "./hooks/net_scroll"
 import AutoSelect from "./hooks/auto_select"
-import TocGraph from "./hooks/toc_graph"
 import TocZoom from "./hooks/toc_zoom"
 
 let Hooks = {
@@ -37,7 +36,6 @@ let Hooks = {
   TabSubmitLast: TabSubmitLast,
   NetScroll: NetScroll,
   AutoSelect: AutoSelect,
-  TocGraph: TocGraph,
   TocZoom: TocZoom
 }
 

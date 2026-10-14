@@ -5,14 +5,13 @@ defmodule FlowspecOps.TOC.Diagram do
   schema "toc_diagrams" do
     field :name, :string
     field :dsl, :string
-    field :graph_json, :map, default: %{}
 
     timestamps()
   end
 
   def changeset(diagram, attrs) do
     diagram
-    |> cast(attrs, [:name, :dsl, :graph_json])
+    |> cast(attrs, [:name, :dsl])
     |> validate_required([:name])
   end
 end
